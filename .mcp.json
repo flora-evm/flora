@@ -1,0 +1,63 @@
+{
+	"mcpServers": {
+		"filesystem": {
+			"command": "/Users/alan/.nvm/versions/node/v22.15.0/bin/node",
+			"args": [
+				"/Users/alan/.nvm/versions/node/v22.15.0/lib/node_modules/@modelcontextprotocol/server-filesystem/dist/index.js",
+				"/Users/alan/Desktop",
+				"/Users/alan/",
+				"/Users/alan/Projects"
+			]
+		},
+		"brave-search": {
+			"command": "/Users/alan/.nvm/versions/node/v22.15.0/bin/node",
+			"args": [
+				"/Users/alan/.nvm/versions/node/v22.15.0/lib/node_modules/@modelcontextprotocol/server-brave-search/dist/index.js"
+			],
+			"env": {
+				"BRAVE_API_KEY": "BSAotTMyiwAAS-8mhm_F65G6hcB2p7w"
+			}
+		},
+		"sequential-thinking": {
+			"command": "/Users/alan/.nvm/versions/node/v22.15.0/bin/node",
+			"args": [
+				"/Users/alan/.nvm/versions/node/v22.15.0/lib/node_modules/@modelcontextprotocol/server-sequential-thinking/dist/index.js"
+			],
+			"alwaysAllow": ["sequentialthinking"]
+		},
+		"Context7": {
+			"command": "/Users/alan/.nvm/versions/node/v22.15.0/bin/node",
+			"args": [
+				"/Users/alan/.nvm/versions/node/v22.15.0/lib/node_modules/@upstash/context7-mcp/dist/index.js"
+			],
+			"alwaysAllow": ["get-library-docs", "resolve-library-id"]
+		},
+		"conport": {
+			"command": "/Users/alan/Projects/TAPEOP/_WORKSPACE/venv-claude/bin/python",
+			"args": [
+				"-m",
+				"context_portal_mcp.main",
+				"--mode",
+				"stdio",
+				"--workspace_id",
+				"${workspaceFolder}"
+			],
+			"alwaysAllow": [
+				"update_product_context",
+				"get_product_context",
+				"get_active_context",
+				"get_decisions",
+				"get_progress",
+				"get_system_patterns",
+				"get_custom_data",
+				"get_recent_activity_summary"
+			]
+		},
+		"puppeteer": {
+			"command": "/Users/alan/.nvm/versions/node/v22.15.0/bin/node",
+			"args": [
+				"/Users/alan/.nvm/versions/node/v22.15.0/lib/node_modules/@modelcontextprotocol/server-puppeteer/dist/index.js"
+			]
+		}
+	}
+}
