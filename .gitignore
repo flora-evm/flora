@@ -4,3 +4,6 @@ dist/
 
 # Create cosmos app
 web/
+
+# Build artifacts
+build/
