@@ -8,7 +8,7 @@ Flora is a Cosmos SDK v0.50.13 blockchain with EVM support and Token Factory mod
 
 Key characteristics:
 - Chain ID: `localchain_9000-1`
-- Native token: `petal` (18 decimals)
+- Native token: `flora` (18 decimals)
 - Bech32 prefix: `flora`
 - Supports both Cosmos and Ethereum transaction types
 
@@ -589,3 +589,12 @@ Do what has been asked; nothing more, nothing less.
 NEVER create files unless they're absolutely necessary for achieving your goal.
 ALWAYS prefer editing an existing file to creating a new one.
 NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.
+
+## Git Commit Messages
+NEVER take credit for commits in commit messages. Do not include:
+- "🤖 Generated with Claude Code"
+- "Co-Authored-By: Claude <noreply@anthropic.com>"
+- Any AI tool attribution or credit
+- Emojis unless explicitly requested by the user
+
+Keep commit messages clean, professional, and focused solely on describing the changes made.

@@ -21,7 +21,7 @@ Create a high-performance blockchain that enables:
 
 ### Technical Specifications
 - **Chain ID**: localchain_9000-1
-- **Native Token**: petal (18 decimals, EVM-compatible)
+- **Native Token**: flora (18 decimals, EVM-compatible)
 - **Consensus**: CometBFT (Tendermint)
 - **Gas Model**: Supports both Cosmos and EVM gas pricing
 - **Account Model**: Ethereum-style accounts with Cosmos addresses
