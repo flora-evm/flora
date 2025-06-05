@@ -8,7 +8,7 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 /**
  * @title LiquidStakedToken (LST)
  * @notice Auto-compounding liquid staking token for Flora blockchain
- * @dev This token represents staked PETAL with a dynamic exchange rate
+ * @dev This token represents staked FLORA with a dynamic exchange rate
  */
 contract LiquidStakedToken is ERC20, Ownable, ReentrancyGuard {
     // Constants
@@ -18,15 +18,15 @@ contract LiquidStakedToken is ERC20, Ownable, ReentrancyGuard {
     // State variables
     address public immutable validator;
     uint256 public totalShares;        // Total shares minted (internal accounting)
-    uint256 public totalPooledPetal;   // Total PETAL value including rewards
+    uint256 public totalPooledFlora;   // Total FLORA value including rewards
     uint256 public lastRewardUpdate;   // Last time rewards were updated
     
-    // Exchange rate = totalPooledPetal / totalShares
-    // 1 LST token represents a share of the total pooled PETAL
+    // Exchange rate = totalPooledFlora / totalShares
+    // 1 LST token represents a share of the total pooled FLORA
     
     // Events
-    event SharesMinted(address indexed account, uint256 shares, uint256 petalAmount);
-    event SharesBurned(address indexed account, uint256 shares, uint256 petalAmount);
+    event SharesMinted(address indexed account, uint256 shares, uint256 floraAmount);
+    event SharesBurned(address indexed account, uint256 shares, uint256 floraAmount);
     event RewardsCompounded(uint256 rewardAmount, uint256 newExchangeRate);
     event SlashingApplied(uint256 slashAmount, uint256 newExchangeRate);
     
@@ -42,22 +42,22 @@ contract LiquidStakedToken is ERC20, Ownable, ReentrancyGuard {
     ) ERC20(name, symbol) {
         validator = _validator;
         totalShares = 0;
-        totalPooledPetal = 0;
+        totalPooledFlora = 0;
         lastRewardUpdate = block.timestamp;
     }
     
     /**
-     * @notice Returns the current exchange rate (PETAL per share)
+     * @notice Returns the current exchange rate (FLORA per share)
      */
     function getExchangeRate() public view returns (uint256) {
         if (totalShares == 0) {
             return PRECISION; // 1:1 initial rate
         }
-        return (totalPooledPetal * PRECISION) / totalShares;
+        return (totalPooledFlora * PRECISION) / totalShares;
     }
     
     /**
-     * @notice Converts PETAL amount to shares
+     * @notice Converts FLORA amount to shares
      */
     function getPetalByShares(uint256 sharesAmount) public view returns (uint256) {
         return (sharesAmount * getExchangeRate()) / PRECISION;
@@ -66,25 +66,25 @@ contract LiquidStakedToken is ERC20, Ownable, ReentrancyGuard {
     /**
      * @notice Converts shares to PETAL amount
      */
-    function getSharesByPetal(uint256 petalAmount) public view returns (uint256) {
-        return (petalAmount * PRECISION) / getExchangeRate();
+    function getSharesByPetal(uint256 floraAmount) public view returns (uint256) {
+        return (floraAmount * PRECISION) / getExchangeRate();
     }
     
     /**
      * @notice Mints new LST tokens when PETAL is staked
      * @dev Only callable by the liquid staking precompile
      */
-    function mint(address account, uint256 petalAmount) external onlyPrecompile nonReentrant {
+    function mint(address account, uint256 floraAmount) external onlyPrecompile nonReentrant {
         require(account != address(0), "Mint to zero address");
-        require(petalAmount > 0, "Amount must be positive");
+        require(floraAmount > 0, "Amount must be positive");
         
-        uint256 sharesToMint = getSharesByPetal(petalAmount);
+        uint256 sharesToMint = getSharesByPetal(floraAmount);
         totalShares += sharesToMint;
-        totalPooledPetal += petalAmount;
+        totalPooledFlora += floraAmount;
         
         _mint(account, sharesToMint);
         
-        emit SharesMinted(account, sharesToMint, petalAmount);
+        emit SharesMinted(account, sharesToMint, floraAmount);
     }
     
     /**
@@ -96,24 +96,24 @@ contract LiquidStakedToken is ERC20, Ownable, ReentrancyGuard {
         require(shares > 0, "Amount must be positive");
         require(balanceOf(account) >= shares, "Insufficient balance");
         
-        uint256 petalAmount = getPetalByShares(shares);
+        uint256 floraAmount = getPetalByShares(shares);
         totalShares -= shares;
-        totalPooledPetal -= petalAmount;
+        totalPooledFlora -= floraAmount;
         
         _burn(account, shares);
         
-        emit SharesBurned(account, shares, petalAmount);
+        emit SharesBurned(account, shares, floraAmount);
     }
     
     /**
      * @notice Updates the total pooled PETAL to reflect staking rewards
      * @dev Called periodically by oracle or keeper
      */
-    function updateRewards(uint256 newTotalPooledPetal) external onlyOwner {
-        require(newTotalPooledPetal >= totalPooledPetal, "Cannot decrease via rewards update");
+    function updateRewards(uint256 newTotalPooledFlora) external onlyOwner {
+        require(newTotalPooledFlora >= totalPooledFlora, "Cannot decrease via rewards update");
         
-        uint256 rewardAmount = newTotalPooledPetal - totalPooledPetal;
-        totalPooledPetal = newTotalPooledPetal;
+        uint256 rewardAmount = newTotalPooledFlora - totalPooledFlora;
+        totalPooledFlora = newTotalPooledFlora;
         lastRewardUpdate = block.timestamp;
         
         emit RewardsCompounded(rewardAmount, getExchangeRate());
@@ -124,9 +124,9 @@ contract LiquidStakedToken is ERC20, Ownable, ReentrancyGuard {
      * @dev Called when validator is slashed
      */
     function applySlashing(uint256 slashAmount) external onlyOwner {
-        require(slashAmount <= totalPooledPetal, "Slash amount exceeds total");
+        require(slashAmount <= totalPooledFlora, "Slash amount exceeds total");
         
-        totalPooledPetal -= slashAmount;
+        totalPooledFlora -= slashAmount;
         
         emit SlashingApplied(slashAmount, getExchangeRate());
     }
@@ -156,7 +156,7 @@ contract LiquidStakedToken is ERC20, Ownable, ReentrancyGuard {
      * @notice Returns total PETAL value of all LST tokens
      */
     function totalSupplyPetal() external view returns (uint256) {
-        return totalPooledPetal;
+        return totalPooledFlora;
     }
 }
 

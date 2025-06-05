@@ -25,8 +25,8 @@ contract LiquidStakedToken is ERC20, Ownable, ReentrancyGuard {
     // 1 LST token represents a share of the total pooled PETAL
     
     // Events
-    event SharesMinted(address indexed account, uint256 shares, uint256 petalAmount);
-    event SharesBurned(address indexed account, uint256 shares, uint256 petalAmount);
+    event SharesMinted(address indexed account, uint256 shares, uint256 floraAmount);
+    event SharesBurned(address indexed account, uint256 shares, uint256 floraAmount);
     event RewardsCompounded(uint256 rewardAmount, uint256 newExchangeRate);
     event SlashingApplied(uint256 slashAmount, uint256 newExchangeRate);
     
@@ -66,8 +66,8 @@ contract LiquidStakedToken is ERC20, Ownable, ReentrancyGuard {
     /**
      * @notice Converts shares to PETAL amount
      */
-    function getSharesByPetal(uint256 petalAmount) public view returns (uint256) {
-        return (petalAmount * PRECISION) / getExchangeRate();
+    function getSharesByFlora(uint256 floraAmount) public view returns (uint256) {
+        return (floraAmount * PRECISION) / getExchangeRate();
     }
     
     /**

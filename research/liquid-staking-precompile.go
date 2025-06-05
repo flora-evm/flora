@@ -161,7 +161,7 @@ func (p *Precompile) tokenizeShares(
 	msg := &liquidtypes.MsgTokenizeShares{
 		DelegatorAddress: senderCosmosAddr.String(),
 		ValidatorAddress: validatorCosmosAddr.String(),
-		Amount:           sdk.NewCoin("petal", sdk.NewIntFromBigInt(amount)),
+		Amount:           sdk.NewCoin("flora", sdk.NewIntFromBigInt(amount)),
 		TokenizedShareOwner: senderCosmosAddr.String(),
 	}
 	
@@ -264,7 +264,7 @@ func (p *Precompile) getOrCreateLSTToken(
 	}
 	
 	// Create denomination through token factory
-	subdenom := fmt.Sprintf("spetal_%s", validator.String()[:8])
+	subdenom := fmt.Sprintf("stflora_%s", validator.String()[:8])
 	creator := p.evmKeeper.GetParams(ctx).EvmDenom // Use module account
 	
 	_, err := p.tokenFactoryKeeper.CreateDenom(ctx, creator, subdenom)

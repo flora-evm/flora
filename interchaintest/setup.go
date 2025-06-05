@@ -27,7 +27,7 @@ var (
 	VotingPeriod     = "15s"
 	MaxDepositPeriod = "10s"
 
-	Denom = "petal"
+	Denom = "flora"
 	Name  = "flora"
 
 	ChainID = "localchain_9000-1"

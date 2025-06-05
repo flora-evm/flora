@@ -107,9 +107,9 @@ interface ILiquidStakingQuery {
 
 #### ERC20-Compatible LST Token
 Each validator would have a corresponding LST token:
-- Token Name: `Liquid Staked PETAL - {Validator}`
-- Symbol: `sPETAL-{ValidatorID}`
-- Decimals: 18 (matching PETAL)
+- Token Name: `Liquid Staked FLORA - {Validator}`
+- Symbol: `stFLORA-{ValidatorID}`
+- Decimals: 18 (matching FLORA)
 
 #### Token Features
 1. **Auto-compounding**: Rewards automatically increase token value
@@ -193,11 +193,11 @@ graph TD
    - Protocol revenue share
 
 2. **Liquidity Incentives**:
-   - LP rewards for sPETAL/PETAL pairs
+   - LP rewards for stFLORA/FLORA pairs
    - Reduced fees for early adopters
 
 3. **Risk Parameters**:
-   - Global cap: 25% of total staked PETAL
+   - Global cap: 25% of total staked FLORA
    - Per-validator cap: 50% of validator's stake
    - Cooldown period: 21 days for redemption
 
@@ -270,7 +270,7 @@ func (h Hooks) AfterValidatorSlashed(ctx sdk.Context, valAddr sdk.ValAddress, sl
 ### 1. Liquid Governance
 - LST holders retain governance rights
 - Proxy voting through LST contracts
-- Weighted voting based on underlying PETAL
+- Weighted voting based on underlying FLORA
 
 ### 2. MEV Protection
 - Implement commit-reveal for large stakes

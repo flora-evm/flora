@@ -68,7 +68,7 @@ Working code examples and reference implementations.
 
 ### 🪙 Liquid Staking Tokens (LST)
 - Auto-compounding ERC20 tokens
-- Per-validator tokens (sPETAL-{ValidatorID})
+- Per-validator tokens (stFLORA-{ValidatorID})
 - IBC-enabled for cross-chain transfers
 
 ### 🔒 Security Features

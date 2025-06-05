@@ -108,7 +108,7 @@ interface ILiquidStakingQuery {
 #### ERC20-Compatible LST Token
 Each validator would have a corresponding LST token:
 - Token Name: `Liquid Staked PETAL - {Validator}`
-- Symbol: `sPETAL-{ValidatorID}`
+- Symbol: `stFLORA-{ValidatorID}`
 - Decimals: 18 (matching PETAL)
 
 #### Token Features
@@ -193,7 +193,7 @@ graph TD
    - Protocol revenue share
 
 2. **Liquidity Incentives**:
-   - LP rewards for sPETAL/PETAL pairs
+   - LP rewards for stFLORA/FLORA pairs
    - Reduced fees for early adopters
 
 3. **Risk Parameters**:

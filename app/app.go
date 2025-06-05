@@ -194,8 +194,8 @@ var (
 
 	BaseDenomUnit int64 = 18
 
-	BaseDenom    = "petal"
-	DisplayDenom = "MY_DENOM_DISPLAY"
+	BaseDenom    = "flora"
+	DisplayDenom = "FLORA"
 
 	// Bech32PrefixAccAddr defines the Bech32 prefix of an account's address
 	Bech32PrefixAccAddr = Bech32Prefix

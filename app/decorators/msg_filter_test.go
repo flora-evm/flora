@@ -32,15 +32,15 @@ func (s *AnteTestSuite) TestAnteMsgFilterLogic() {
 	msg := banktypes.NewMsgSend(
 		acc,
 		acc,
-		sdk.NewCoins(sdk.NewCoin("stake", sdkmath.NewInt(1))),
+		sdk.NewCoins(sdk.NewCoin("flora", sdkmath.NewInt(1))),
 	)
 	_, err := ante.AnteHandle(s.ctx, decorators.NewMockTx(msg), false, decorators.EmptyAnte)
 	s.Require().Error(err)
 
 	// validate other messages go through still (such as MsgMultiSend)
 	msgMultiSend := banktypes.NewMsgMultiSend(
-		banktypes.NewInput(acc, sdk.NewCoins(sdk.NewCoin("stake", sdkmath.NewInt(1)))),
-		[]banktypes.Output{banktypes.NewOutput(acc, sdk.NewCoins(sdk.NewCoin("stake", sdkmath.NewInt(1))))},
+		banktypes.NewInput(acc, sdk.NewCoins(sdk.NewCoin("flora", sdkmath.NewInt(1)))),
+		[]banktypes.Output{banktypes.NewOutput(acc, sdk.NewCoins(sdk.NewCoin("flora", sdkmath.NewInt(1))))},
 	)
 	_, err = ante.AnteHandle(s.ctx, decorators.NewMockTx(msgMultiSend), false, decorators.EmptyAnte)
 	s.Require().NoError(err)

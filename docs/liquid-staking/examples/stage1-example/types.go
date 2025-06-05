@@ -91,7 +91,7 @@ func DefaultParams() ModuleParams {
 		Enabled:                true,
 		GlobalLiquidStakingCap: sdk.NewDecWithPrec(25, 2), // 25%
 		ValidatorLiquidCap:     sdk.NewDecWithPrec(50, 2), // 50%
-		MinTokenizationAmount:  sdk.NewInt(1000000),       // 1 PETAL
+		MinTokenizationAmount:  sdk.NewInt(1000000),       // 1 FLORA
 	}
 }
 
