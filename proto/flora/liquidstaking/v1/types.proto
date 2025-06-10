@@ -1,0 +1,51 @@
+syntax = "proto3";
+package flora.liquidstaking.v1;
+
+import "gogoproto/gogo.proto";
+import "cosmos_proto/cosmos.proto";
+import "cosmos/base/v1beta1/coin.proto";
+
+option go_package = "github.com/rollchains/flora/x/liquidstaking/types";
+
+// TokenizationRecord represents a record of staked tokens that have been tokenized
+message TokenizationRecord {
+  option (gogoproto.goproto_getters) = false;
+  
+  // id is the unique identifier for this record
+  uint64 id = 1;
+  
+  // validator is the bech32 address of the validator
+  string validator = 2 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  
+  // owner is the bech32 address of the record owner
+  string owner = 3 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  
+  // shares_tokenized is the amount of shares tokenized
+  string shares_tokenized = 4 [
+    (cosmos_proto.scalar)  = "cosmos.Int",
+    (gogoproto.customtype) = "cosmossdk.io/math.Int",
+    (gogoproto.nullable)   = false
+  ];
+}
+
+// ModuleParams defines the parameters for the liquid staking module
+message ModuleParams {
+  option (gogoproto.goproto_getters) = false;
+  
+  // global_liquid_staking_cap is the global cap for liquid staking as a percentage
+  string global_liquid_staking_cap = 1 [
+    (cosmos_proto.scalar)  = "cosmos.Dec",
+    (gogoproto.customtype) = "cosmossdk.io/math.LegacyDec",
+    (gogoproto.nullable)   = false
+  ];
+  
+  // validator_liquid_cap is the per-validator cap for liquid staking as a percentage
+  string validator_liquid_cap = 2 [
+    (cosmos_proto.scalar)  = "cosmos.Dec",
+    (gogoproto.customtype) = "cosmossdk.io/math.LegacyDec",
+    (gogoproto.nullable)   = false
+  ];
+  
+  // enabled indicates if the liquid staking module is enabled
+  bool enabled = 3;
+}

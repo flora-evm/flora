@@ -1,0 +1,60 @@
+syntax = "proto3";
+package flora.liquidstaking.v1;
+
+import "gogoproto/gogo.proto";
+import "google/api/annotations.proto";
+import "cosmos/base/query/v1beta1/pagination.proto";
+import "flora/liquidstaking/v1/types.proto";
+
+option go_package = "github.com/rollchains/flora/x/liquidstaking/types";
+
+// Query defines the gRPC querier service for liquid staking module
+service Query {
+  // Params queries the module parameters
+  rpc Params(QueryParamsRequest) returns (QueryParamsResponse) {
+    option (google.api.http).get = "/flora/liquidstaking/v1/params";
+  }
+  
+  // TokenizationRecord queries a specific tokenization record by ID
+  rpc TokenizationRecord(QueryTokenizationRecordRequest) returns (QueryTokenizationRecordResponse) {
+    option (google.api.http).get = "/flora/liquidstaking/v1/tokenization_records/{id}";
+  }
+  
+  // TokenizationRecords queries all tokenization records
+  rpc TokenizationRecords(QueryTokenizationRecordsRequest) returns (QueryTokenizationRecordsResponse) {
+    option (google.api.http).get = "/flora/liquidstaking/v1/tokenization_records";
+  }
+}
+
+// QueryParamsRequest is the request type for the Query/Params RPC method
+message QueryParamsRequest {}
+
+// QueryParamsResponse is the response type for the Query/Params RPC method
+message QueryParamsResponse {
+  // params defines the module parameters
+  ModuleParams params = 1 [(gogoproto.nullable) = false];
+}
+
+// QueryTokenizationRecordRequest is the request type for the Query/TokenizationRecord RPC method
+message QueryTokenizationRecordRequest {
+  uint64 id = 1;
+}
+
+// QueryTokenizationRecordResponse is the response type for the Query/TokenizationRecord RPC method
+message QueryTokenizationRecordResponse {
+  TokenizationRecord record = 1 [(gogoproto.nullable) = false];
+}
+
+// QueryTokenizationRecordsRequest is the request type for the Query/TokenizationRecords RPC method
+message QueryTokenizationRecordsRequest {
+  // pagination defines an optional pagination for the request
+  cosmos.base.query.v1beta1.PageRequest pagination = 1;
+}
+
+// QueryTokenizationRecordsResponse is the response type for the Query/TokenizationRecords RPC method
+message QueryTokenizationRecordsResponse {
+  repeated TokenizationRecord records = 1 [(gogoproto.nullable) = false];
+  
+  // pagination defines the pagination in the response
+  cosmos.base.query.v1beta1.PageResponse pagination = 2;
+}

@@ -1,0 +1,21 @@
+syntax = "proto3";
+package flora.liquidstaking.v1;
+
+import "gogoproto/gogo.proto";
+import "flora/liquidstaking/v1/types.proto";
+
+option go_package = "github.com/rollchains/flora/x/liquidstaking/types";
+
+// GenesisState defines the liquid staking module's genesis state
+message GenesisState {
+  option (gogoproto.goproto_getters) = false;
+  
+  // params defines all the module parameters
+  ModuleParams params = 1 [(gogoproto.nullable) = false];
+  
+  // tokenization_records is the list of tokenization records
+  repeated TokenizationRecord tokenization_records = 2 [(gogoproto.nullable) = false];
+  
+  // last_tokenization_record_id is the last used record ID
+  uint64 last_tokenization_record_id = 3;
+}

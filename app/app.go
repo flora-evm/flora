@@ -135,6 +135,10 @@ import (
 	tokenfactory "github.com/strangelove-ventures/tokenfactory/x/tokenfactory"
 	tokenfactorykeeper "github.com/strangelove-ventures/tokenfactory/x/tokenfactory/keeper"
 	tokenfactorytypes "github.com/strangelove-ventures/tokenfactory/x/tokenfactory/types"
+	
+	liquidstaking "github.com/rollchains/flora/x/liquidstaking"
+	liquidstakingkeeper "github.com/rollchains/flora/x/liquidstaking/keeper"
+	liquidstakingtypes "github.com/rollchains/flora/x/liquidstaking/types"
 
 	distr "github.com/cosmos/cosmos-sdk/x/distribution"
 	"github.com/cosmos/cosmos-sdk/x/gov"
@@ -276,6 +280,7 @@ type ChainApp struct {
 
 	// Custom
 	TokenFactoryKeeper tokenfactorykeeper.Keeper
+	LiquidStakingKeeper liquidstakingkeeper.Keeper
 	FeeMarketKeeper    feemarketkeeper.Keeper
 	EVMKeeper          *evmkeeper.Keeper
 	Erc20Keeper        erc20keeper.Keeper
@@ -385,6 +390,7 @@ func NewChainApp(
 		icahosttypes.StoreKey,
 		icacontrollertypes.StoreKey,
 		tokenfactorytypes.StoreKey,
+		liquidstakingtypes.StoreKey,
 		evmtypes.StoreKey,
 		feemarkettypes.StoreKey,
 		erc20types.StoreKey,
@@ -710,6 +716,12 @@ func NewChainApp(
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
 	)
 
+	// Create the liquid staking keeper
+	app.LiquidStakingKeeper = liquidstakingkeeper.NewKeeper(
+		runtime.NewKVStoreService(app.keys[liquidstakingtypes.StoreKey]),
+		appCodec,
+	)
+
 	// IBC Fee Module keeper
 	app.IBCFeeKeeper = ibcfeekeeper.NewKeeper(
 		appCodec, keys[ibcfeetypes.StoreKey],
@@ -837,6 +849,7 @@ func NewChainApp(
 		crisis.NewAppModule(app.CrisisKeeper, skipGenesisInvariants, app.GetSubspace(crisistypes.ModuleName)),
 		// custom
 		tokenfactory.NewAppModule(app.TokenFactoryKeeper, app.AccountKeeper, app.BankKeeper, app.GetSubspace(tokenfactorytypes.ModuleName)),
+		liquidstaking.NewAppModule(app.LiquidStakingKeeper),
 		cosmosevmvm.NewAppModule(app.EVMKeeper, app.AccountKeeper, app.GetSubspace(evmtypes.ModuleName)),
 		feemarket.NewAppModule(app.FeeMarketKeeper, app.GetSubspace(feemarkettypes.ModuleName)),
 		erc20.NewAppModule(app.Erc20Keeper, app.AccountKeeper, app.GetSubspace(erc20types.ModuleName)),
@@ -882,6 +895,7 @@ func NewChainApp(
 		icatypes.ModuleName,
 		ibcfeetypes.ModuleName,
 		tokenfactorytypes.ModuleName,
+		liquidstakingtypes.ModuleName,
 	)
 
 	app.ModuleManager.SetOrderEndBlockers(
@@ -899,6 +913,7 @@ func NewChainApp(
 		icatypes.ModuleName,
 		ibcfeetypes.ModuleName,
 		tokenfactorytypes.ModuleName,
+		liquidstakingtypes.ModuleName,
 	)
 
 	// NOTE: The genutils module must occur after staking so that pools are
@@ -943,6 +958,7 @@ func NewChainApp(
 		icatypes.ModuleName,
 		ibcfeetypes.ModuleName,
 		tokenfactorytypes.ModuleName,
+		liquidstakingtypes.ModuleName,
 	}
 	app.ModuleManager.SetOrderInitGenesis(genesisModuleOrder...)
 	app.ModuleManager.SetOrderExportGenesis(genesisModuleOrder...)
