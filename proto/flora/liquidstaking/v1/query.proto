@@ -4,6 +4,7 @@ package flora.liquidstaking.v1;
 import "gogoproto/gogo.proto";
 import "google/api/annotations.proto";
 import "cosmos/base/query/v1beta1/pagination.proto";
+import "cosmos_proto/cosmos.proto";
 import "flora/liquidstaking/v1/types.proto";
 
 option go_package = "github.com/rollchains/flora/x/liquidstaking/types";
@@ -23,6 +24,26 @@ service Query {
   // TokenizationRecords queries all tokenization records
   rpc TokenizationRecords(QueryTokenizationRecordsRequest) returns (QueryTokenizationRecordsResponse) {
     option (google.api.http).get = "/flora/liquidstaking/v1/tokenization_records";
+  }
+  
+  // TokenizationRecordsByValidator queries tokenization records by validator
+  rpc TokenizationRecordsByValidator(QueryTokenizationRecordsByValidatorRequest) returns (QueryTokenizationRecordsByValidatorResponse) {
+    option (google.api.http).get = "/flora/liquidstaking/v1/tokenization_records/validator/{validator_address}";
+  }
+  
+  // TokenizationRecordsByOwner queries tokenization records by owner
+  rpc TokenizationRecordsByOwner(QueryTokenizationRecordsByOwnerRequest) returns (QueryTokenizationRecordsByOwnerResponse) {
+    option (google.api.http).get = "/flora/liquidstaking/v1/tokenization_records/owner/{owner_address}";
+  }
+  
+  // TotalLiquidStaked queries the total amount of liquid staked tokens
+  rpc TotalLiquidStaked(QueryTotalLiquidStakedRequest) returns (QueryTotalLiquidStakedResponse) {
+    option (google.api.http).get = "/flora/liquidstaking/v1/total_liquid_staked";
+  }
+  
+  // ValidatorLiquidStaked queries the amount of liquid staked tokens for a specific validator
+  rpc ValidatorLiquidStaked(QueryValidatorLiquidStakedRequest) returns (QueryValidatorLiquidStakedResponse) {
+    option (google.api.http).get = "/flora/liquidstaking/v1/validator_liquid_staked/{validator_address}";
   }
 }
 
@@ -57,4 +78,67 @@ message QueryTokenizationRecordsResponse {
   
   // pagination defines the pagination in the response
   cosmos.base.query.v1beta1.PageResponse pagination = 2;
+}
+
+// QueryTokenizationRecordsByValidatorRequest is the request type for the Query/TokenizationRecordsByValidator RPC method
+message QueryTokenizationRecordsByValidatorRequest {
+  // validator_address is the address of the validator
+  string validator_address = 1;
+  
+  // pagination defines an optional pagination for the request
+  cosmos.base.query.v1beta1.PageRequest pagination = 2;
+}
+
+// QueryTokenizationRecordsByValidatorResponse is the response type for the Query/TokenizationRecordsByValidator RPC method
+message QueryTokenizationRecordsByValidatorResponse {
+  repeated TokenizationRecord records = 1 [(gogoproto.nullable) = false];
+  
+  // pagination defines the pagination in the response
+  cosmos.base.query.v1beta1.PageResponse pagination = 2;
+}
+
+// QueryTokenizationRecordsByOwnerRequest is the request type for the Query/TokenizationRecordsByOwner RPC method
+message QueryTokenizationRecordsByOwnerRequest {
+  // owner_address is the address of the owner
+  string owner_address = 1;
+  
+  // pagination defines an optional pagination for the request
+  cosmos.base.query.v1beta1.PageRequest pagination = 2;
+}
+
+// QueryTokenizationRecordsByOwnerResponse is the response type for the Query/TokenizationRecordsByOwner RPC method
+message QueryTokenizationRecordsByOwnerResponse {
+  repeated TokenizationRecord records = 1 [(gogoproto.nullable) = false];
+  
+  // pagination defines the pagination in the response
+  cosmos.base.query.v1beta1.PageResponse pagination = 2;
+}
+
+// QueryTotalLiquidStakedRequest is the request type for the Query/TotalLiquidStaked RPC method
+message QueryTotalLiquidStakedRequest {}
+
+// QueryTotalLiquidStakedResponse is the response type for the Query/TotalLiquidStaked RPC method
+message QueryTotalLiquidStakedResponse {
+  // total_liquid_staked is the total amount of liquid staked tokens
+  string total_liquid_staked = 1 [
+    (cosmos_proto.scalar)  = "cosmos.Int",
+    (gogoproto.customtype) = "cosmossdk.io/math.Int",
+    (gogoproto.nullable)   = false
+  ];
+}
+
+// QueryValidatorLiquidStakedRequest is the request type for the Query/ValidatorLiquidStaked RPC method
+message QueryValidatorLiquidStakedRequest {
+  // validator_address is the address of the validator
+  string validator_address = 1;
+}
+
+// QueryValidatorLiquidStakedResponse is the response type for the Query/ValidatorLiquidStaked RPC method
+message QueryValidatorLiquidStakedResponse {
+  // liquid_staked is the amount of liquid staked tokens for the validator
+  string liquid_staked = 1 [
+    (cosmos_proto.scalar)  = "cosmos.Int",
+    (gogoproto.customtype) = "cosmossdk.io/math.Int",
+    (gogoproto.nullable)   = false
+  ];
 }

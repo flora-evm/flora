@@ -4,7 +4,7 @@
 
 The liquid staking module enables users to tokenize their staked assets while maintaining the security and rewards of the staking system. This module is being implemented in a staged approach over 20 weeks, with each stage building upon the previous functionality.
 
-## Current Status: Stage 1 Complete ✅
+## Current Status: Stage 2 Complete ✅
 
 ### Stage 1: Basic Infrastructure (Week 1) - COMPLETED
 
@@ -94,13 +94,15 @@ Currently, the module provides basic infrastructure only. Transaction handling w
 - Genesis handling
 - Unit tests
 
-### 🚀 Stage 2: State Management (Week 2) - NEXT
-- Extend keeper with tokenization record operations
-- Add state queries
-- Implement validation logic
-- Integration tests
+### ✅ Stage 2: State Management (Week 2) - COMPLETED
+- Extended keeper with tokenization record operations
+- Added indexed queries (by validator, by owner)
+- Implemented validation logic for liquid staking caps
+- Created comprehensive test suite (38 tests, all passing)
+- Added proto query service definitions
+- Implemented state aggregation (total and per-validator tracking)
 
-### Stage 3: Basic Tokenization (Weeks 3-4)
+### 🚀 Stage 3: Basic Tokenization (Weeks 3-4) - NEXT
 - MsgTokenizeShares implementation
 - Basic minting of liquid staking tokens
 - Event emission
