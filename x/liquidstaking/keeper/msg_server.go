@@ -33,28 +33,27 @@ func (k msgServer) TokenizeShares(goCtx context.Context, msg *types.MsgTokenizeS
 	}
 	
 	// Check if module is enabled
-	params := k.GetParams(ctx)
-	if !params.Enabled {
-		return nil, types.ErrModuleDisabled
+	if err := k.ValidateModuleEnabled(ctx); err != nil {
+		return nil, err
 	}
 	
 	// Parse addresses
-	delegatorAddr, err := sdk.AccAddressFromBech32(msg.DelegatorAddress)
+	delegatorAddr, err := ParseAndValidateAddress(msg.DelegatorAddress, "delegator")
 	if err != nil {
-		return nil, sdkerrors.ErrInvalidAddress.Wrapf("invalid delegator address: %s", err)
+		return nil, err
 	}
 	
-	validatorAddr, err := sdk.ValAddressFromBech32(msg.ValidatorAddress)
+	validatorAddr, err := ParseAndValidateValidatorAddress(msg.ValidatorAddress)
 	if err != nil {
-		return nil, sdkerrors.ErrInvalidAddress.Wrapf("invalid validator address: %s", err)
+		return nil, err
 	}
 	
 	// Determine owner address (defaults to delegator if not specified)
 	ownerAddr := delegatorAddr
 	if msg.OwnerAddress != "" {
-		ownerAddr, err = sdk.AccAddressFromBech32(msg.OwnerAddress)
+		ownerAddr, err = ParseAndValidateAddress(msg.OwnerAddress, "owner")
 		if err != nil {
-			return nil, sdkerrors.ErrInvalidAddress.Wrapf("invalid owner address: %s", err)
+			return nil, err
 		}
 	}
 	
@@ -193,20 +192,19 @@ func (k msgServer) RedeemTokens(goCtx context.Context, msg *types.MsgRedeemToken
 	}
 
 	// Check if module is enabled
-	params := k.GetParams(ctx)
-	if !params.Enabled {
-		return nil, types.ErrModuleDisabled
+	if err := k.ValidateModuleEnabled(ctx); err != nil {
+		return nil, err
 	}
 
 	// Parse owner address
-	ownerAddr, err := sdk.AccAddressFromBech32(msg.OwnerAddress)
+	ownerAddr, err := ParseAndValidateAddress(msg.OwnerAddress, "owner")
 	if err != nil {
-		return nil, sdkerrors.ErrInvalidAddress.Wrapf("invalid owner address: %s", err)
+		return nil, err
 	}
 
 	// Validate amount
-	if !msg.Amount.IsValid() || msg.Amount.IsZero() {
-		return nil, sdkerrors.ErrInvalidRequest.Wrap("invalid redeem amount")
+	if err := ValidatePositiveAmount(msg.Amount); err != nil {
+		return nil, err
 	}
 
 	// Get the tokenization record by denom
@@ -232,9 +230,9 @@ func (k msgServer) RedeemTokens(goCtx context.Context, msg *types.MsgRedeemToken
 	}
 
 	// Get the validator
-	valAddr, err := sdk.ValAddressFromBech32(record.Validator)
+	valAddr, err := ParseAndValidateValidatorAddress(record.Validator)
 	if err != nil {
-		return nil, sdkerrors.ErrInvalidAddress.Wrapf("invalid validator address in record: %s", err)
+		return nil, err
 	}
 
 	validator, err := k.stakingKeeper.GetValidator(ctx, valAddr)

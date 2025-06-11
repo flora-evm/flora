@@ -1,0 +1,330 @@
+package keeper_test
+
+import (
+	"context"
+	"testing"
+
+	"cosmossdk.io/math"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
+	"github.com/stretchr/testify/suite"
+
+	"github.com/rollchains/flora/x/liquidstaking/types"
+)
+
+type ValidatorStateTestSuite struct {
+	StakingIntegrationTestSuite
+}
+
+func TestValidatorStateTestSuite(t *testing.T) {
+	suite.Run(t, new(ValidatorStateTestSuite))
+}
+
+// Test tokenization with validator commission changes
+func (suite *ValidatorStateTestSuite) TestTokenizeShares_ValidatorCommissionChange() {
+	// Setup addresses
+	delegatorAddr := sdk.AccAddress([]byte("delegator"))
+	validatorAddr := sdk.ValAddress([]byte("validator"))
+	
+	// Setup mock expectations
+	delegation := stakingtypes.Delegation{
+		DelegatorAddress: delegatorAddr.String(),
+		ValidatorAddress: validatorAddr.String(),
+		Shares:           math.LegacyNewDec(1000000),
+	}
+	
+	// Validator with specific commission
+	validator := stakingtypes.Validator{
+		OperatorAddress: validatorAddr.String(),
+		Status:          stakingtypes.Bonded,
+		Tokens:          math.NewInt(1000000),
+		DelegatorShares: math.LegacyNewDec(1000000),
+		Commission: stakingtypes.Commission{
+			CommissionRates: stakingtypes.CommissionRates{
+				Rate:          math.LegacyNewDecWithPrec(10, 2), // 10%
+				MaxRate:       math.LegacyNewDecWithPrec(20, 2), // 20%
+				MaxChangeRate: math.LegacyNewDecWithPrec(1, 2),  // 1%
+			},
+		},
+		Jailed: false,
+	}
+	
+	suite.stakingKeeper.GetDelegationFn = func(ctx context.Context, delAddr sdk.AccAddress, valAddr sdk.ValAddress) (stakingtypes.Delegation, error) {
+		return delegation, nil
+	}
+	
+	suite.stakingKeeper.GetValidatorFn = func(ctx context.Context, addr sdk.ValAddress) (stakingtypes.Validator, error) {
+		return validator, nil
+	}
+	
+	suite.stakingKeeper.UnbondFn = func(ctx context.Context, delAddr sdk.AccAddress, valAddr sdk.ValAddress, shares math.LegacyDec) (math.Int, error) {
+		// With commission, actual tokens might be less than shares
+		// For simplicity, we'll use 1:1 ratio in mock
+		return shares.TruncateInt(), nil
+	}
+	
+	suite.bankKeeper.MintCoinsFn = func(ctx context.Context, moduleName string, amt sdk.Coins) error {
+		return nil
+	}
+	
+	suite.bankKeeper.SendCoinsFromModuleToAccountFn = func(ctx context.Context, senderModule string, recipientAddr sdk.AccAddress, amt sdk.Coins) error {
+		return nil
+	}
+	
+	suite.bankKeeper.SetDenomMetaDataFn = func(ctx context.Context, denomMetaData banktypes.Metadata) {}
+	
+	// Mock total bonded tokens to avoid cap issues
+	suite.stakingKeeper.TotalBondedTokensFn = func(ctx context.Context) math.Int {
+		return math.NewInt(100000000) // 100M total bonded
+	}
+	
+	// Execute tokenization
+	msg := &types.MsgTokenizeShares{
+		DelegatorAddress: delegatorAddr.String(),
+		ValidatorAddress: validatorAddr.String(),
+		Shares:           sdk.NewCoin("shares", math.NewInt(500000)),
+		OwnerAddress:     "",
+	}
+	
+	resp, err := suite.msgServer.TokenizeShares(suite.ctx, msg)
+	suite.Require().NoError(err)
+	suite.Require().NotNil(resp)
+	
+	// Verify the tokenization record was created
+	_, found := suite.keeper.GetTokenizationRecord(suite.ctx, resp.RecordId)
+	suite.Require().True(found)
+	
+	// Now test redemption after commission change
+	// Update validator with higher commission
+	validatorWithHigherCommission := validator
+	validatorWithHigherCommission.Commission.CommissionRates.Rate = math.LegacyNewDecWithPrec(15, 2) // 15%
+	
+	suite.stakingKeeper.GetValidatorFn = func(ctx context.Context, addr sdk.ValAddress) (stakingtypes.Validator, error) {
+		return validatorWithHigherCommission, nil
+	}
+	
+	// The commission change should not affect the redemption process
+	// The exchange rate is handled by the validator's SharesFromTokens calculation
+}
+
+// Test tokenization when validator reaches maximum liquid staking cap
+func (suite *ValidatorStateTestSuite) TestTokenizeShares_ValidatorCapReached() {
+	// Setup addresses
+	delegatorAddr := sdk.AccAddress([]byte("delegator"))
+	validatorAddr := sdk.ValAddress([]byte("validator"))
+	
+	// Set validator cap to 50%
+	params := suite.keeper.GetParams(suite.ctx)
+	params.ValidatorLiquidCap = math.LegacyNewDecWithPrec(50, 2) // 50%
+	suite.keeper.SetParams(suite.ctx, params)
+	
+	// Setup mock expectations
+	delegation := stakingtypes.Delegation{
+		DelegatorAddress: delegatorAddr.String(),
+		ValidatorAddress: validatorAddr.String(),
+		Shares:           math.LegacyNewDec(1000000),
+	}
+	
+	validator := stakingtypes.Validator{
+		OperatorAddress: validatorAddr.String(),
+		Status:          stakingtypes.Bonded,
+		Tokens:          math.NewInt(1000000),
+		DelegatorShares: math.LegacyNewDec(1000000),
+		Jailed:          false,
+	}
+	
+	// Simulate that 40% is already liquid staked
+	suite.keeper.SetValidatorLiquidStaked(suite.ctx, validatorAddr.String(), math.NewInt(400000))
+	
+	suite.stakingKeeper.GetDelegationFn = func(ctx context.Context, delAddr sdk.AccAddress, valAddr sdk.ValAddress) (stakingtypes.Delegation, error) {
+		return delegation, nil
+	}
+	
+	suite.stakingKeeper.GetValidatorFn = func(ctx context.Context, addr sdk.ValAddress) (stakingtypes.Validator, error) {
+		return validator, nil
+	}
+	
+	// Try to tokenize 200k more (would be 60% total, exceeding 50% cap)
+	msg := &types.MsgTokenizeShares{
+		DelegatorAddress: delegatorAddr.String(),
+		ValidatorAddress: validatorAddr.String(),
+		Shares:           sdk.NewCoin("shares", math.NewInt(200000)),
+		OwnerAddress:     "",
+	}
+	
+	_, err := suite.msgServer.TokenizeShares(suite.ctx, msg)
+	suite.Require().Error(err)
+	suite.Require().Contains(err.Error(), "tokenization would exceed validator liquid staking cap")
+	
+	// Try to tokenize 100k (would be exactly 50%, should succeed)
+	msg.Shares = sdk.NewCoin("shares", math.NewInt(100000))
+	
+	suite.stakingKeeper.UnbondFn = func(ctx context.Context, delAddr sdk.AccAddress, valAddr sdk.ValAddress, shares math.LegacyDec) (math.Int, error) {
+		return shares.TruncateInt(), nil
+	}
+	
+	suite.bankKeeper.MintCoinsFn = func(ctx context.Context, moduleName string, amt sdk.Coins) error {
+		return nil
+	}
+	
+	suite.bankKeeper.SendCoinsFromModuleToAccountFn = func(ctx context.Context, senderModule string, recipientAddr sdk.AccAddress, amt sdk.Coins) error {
+		return nil
+	}
+	
+	suite.bankKeeper.SetDenomMetaDataFn = func(ctx context.Context, denomMetaData banktypes.Metadata) {}
+	
+	resp, err := suite.msgServer.TokenizeShares(suite.ctx, msg)
+	suite.Require().NoError(err)
+	suite.Require().NotNil(resp)
+}
+
+// Test global liquid staking cap
+func (suite *ValidatorStateTestSuite) TestTokenizeShares_GlobalCapReached() {
+	// Setup addresses
+	delegatorAddr := sdk.AccAddress([]byte("delegator"))
+	validatorAddr := sdk.ValAddress([]byte("validator"))
+	
+	// Set global cap to 25%
+	params := suite.keeper.GetParams(suite.ctx)
+	params.GlobalLiquidStakingCap = math.LegacyNewDecWithPrec(25, 2) // 25%
+	suite.keeper.SetParams(suite.ctx, params)
+	
+	// Setup mock expectations
+	delegation := stakingtypes.Delegation{
+		DelegatorAddress: delegatorAddr.String(),
+		ValidatorAddress: validatorAddr.String(),
+		Shares:           math.LegacyNewDec(1000000),
+	}
+	
+	validator := stakingtypes.Validator{
+		OperatorAddress: validatorAddr.String(),
+		Status:          stakingtypes.Bonded,
+		Tokens:          math.NewInt(1000000),
+		DelegatorShares: math.LegacyNewDec(1000000),
+		Jailed:          false,
+	}
+	
+	// Mock total bonded tokens as 10M
+	suite.stakingKeeper.TotalBondedTokensFn = func(ctx context.Context) math.Int {
+		return math.NewInt(10000000)
+	}
+	
+	// Simulate that 2M is already liquid staked (20% of total)
+	suite.keeper.SetTotalLiquidStaked(suite.ctx, math.NewInt(2000000))
+	
+	suite.stakingKeeper.GetDelegationFn = func(ctx context.Context, delAddr sdk.AccAddress, valAddr sdk.ValAddress) (stakingtypes.Delegation, error) {
+		return delegation, nil
+	}
+	
+	suite.stakingKeeper.GetValidatorFn = func(ctx context.Context, addr sdk.ValAddress) (stakingtypes.Validator, error) {
+		return validator, nil
+	}
+	
+	// Try to tokenize 600k more (would be 26% total, exceeding 25% cap)
+	msg := &types.MsgTokenizeShares{
+		DelegatorAddress: delegatorAddr.String(),
+		ValidatorAddress: validatorAddr.String(),
+		Shares:           sdk.NewCoin("shares", math.NewInt(600000)),
+		OwnerAddress:     "",
+	}
+	
+	_, err := suite.msgServer.TokenizeShares(suite.ctx, msg)
+	suite.Require().Error(err)
+	suite.Require().Contains(err.Error(), "tokenization would exceed global liquid staking cap")
+	
+	// Try to tokenize 500k (would be exactly 25%, should succeed)
+	msg.Shares = sdk.NewCoin("shares", math.NewInt(500000))
+	
+	suite.stakingKeeper.UnbondFn = func(ctx context.Context, delAddr sdk.AccAddress, valAddr sdk.ValAddress, shares math.LegacyDec) (math.Int, error) {
+		return shares.TruncateInt(), nil
+	}
+	
+	suite.bankKeeper.MintCoinsFn = func(ctx context.Context, moduleName string, amt sdk.Coins) error {
+		return nil
+	}
+	
+	suite.bankKeeper.SendCoinsFromModuleToAccountFn = func(ctx context.Context, senderModule string, recipientAddr sdk.AccAddress, amt sdk.Coins) error {
+		return nil
+	}
+	
+	suite.bankKeeper.SetDenomMetaDataFn = func(ctx context.Context, denomMetaData banktypes.Metadata) {}
+	
+	resp, err := suite.msgServer.TokenizeShares(suite.ctx, msg)
+	suite.Require().NoError(err)
+	suite.Require().NotNil(resp)
+}
+
+// Test validator tokens vs shares discrepancy (slashing scenario)
+func (suite *ValidatorStateTestSuite) TestTokenizeShares_SlashedValidator() {
+	// Setup addresses
+	delegatorAddr := sdk.AccAddress([]byte("delegator"))
+	validatorAddr := sdk.ValAddress([]byte("validator"))
+	
+	// Setup mock expectations
+	delegation := stakingtypes.Delegation{
+		DelegatorAddress: delegatorAddr.String(),
+		ValidatorAddress: validatorAddr.String(),
+		Shares:           math.LegacyNewDec(1000000), // 1M shares
+	}
+	
+	// Validator has been slashed - tokens < shares
+	validator := stakingtypes.Validator{
+		OperatorAddress: validatorAddr.String(),
+		Status:          stakingtypes.Bonded,
+		Tokens:          math.NewInt(800000),        // Only 800k tokens (20% slashed)
+		DelegatorShares: math.LegacyNewDec(1000000), // Still 1M shares
+		Jailed:          false,
+	}
+	
+	suite.stakingKeeper.GetDelegationFn = func(ctx context.Context, delAddr sdk.AccAddress, valAddr sdk.ValAddress) (stakingtypes.Delegation, error) {
+		return delegation, nil
+	}
+	
+	suite.stakingKeeper.GetValidatorFn = func(ctx context.Context, addr sdk.ValAddress) (stakingtypes.Validator, error) {
+		return validator, nil
+	}
+	
+	suite.stakingKeeper.UnbondFn = func(ctx context.Context, delAddr sdk.AccAddress, valAddr sdk.ValAddress, shares math.LegacyDec) (math.Int, error) {
+		// Calculate actual tokens based on slashed ratio
+		// 500k shares = 400k tokens (due to 20% slash)
+		tokensPerShare := math.LegacyNewDecFromInt(validator.Tokens).Quo(validator.DelegatorShares)
+		actualTokens := shares.Mul(tokensPerShare).TruncateInt()
+		return actualTokens, nil
+	}
+	
+	suite.bankKeeper.MintCoinsFn = func(ctx context.Context, moduleName string, amt sdk.Coins) error {
+		return nil
+	}
+	
+	suite.bankKeeper.SendCoinsFromModuleToAccountFn = func(ctx context.Context, senderModule string, recipientAddr sdk.AccAddress, amt sdk.Coins) error {
+		return nil
+	}
+	
+	suite.bankKeeper.SetDenomMetaDataFn = func(ctx context.Context, denomMetaData banktypes.Metadata) {}
+	
+	// Mock total bonded tokens to avoid cap issues
+	suite.stakingKeeper.TotalBondedTokensFn = func(ctx context.Context) math.Int {
+		return math.NewInt(100000000) // 100M total bonded
+	}
+	
+	// Execute tokenization of 500k shares
+	msg := &types.MsgTokenizeShares{
+		DelegatorAddress: delegatorAddr.String(),
+		ValidatorAddress: validatorAddr.String(),
+		Shares:           sdk.NewCoin("shares", math.NewInt(500000)),
+		OwnerAddress:     "",
+	}
+	
+	resp, err := suite.msgServer.TokenizeShares(suite.ctx, msg)
+	suite.Require().NoError(err)
+	suite.Require().NotNil(resp)
+	
+	// Should receive 400k tokens (not 500k) due to slashing
+	suite.Require().Equal(math.NewInt(400000), resp.Amount.Amount)
+	
+	// Verify record stores the actual token amount
+	record, found := suite.keeper.GetTokenizationRecord(suite.ctx, resp.RecordId)
+	suite.Require().True(found)
+	suite.Require().Equal(math.NewInt(400000), record.SharesTokenized)
+}

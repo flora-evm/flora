@@ -17,6 +17,7 @@ type MockStakingKeeper struct {
 	GetParamsFn          func(ctx context.Context) (stakingtypes.Params, error)
 	BondDenomFn          func(ctx context.Context) (string, error)
 	TotalBondedTokensFn  func(ctx context.Context) math.Int
+	DelegateFn           func(ctx context.Context, delAddr sdk.AccAddress, bondAmt math.Int, tokenSrc stakingtypes.BondStatus, validator stakingtypes.Validator, subtractAccount bool) (math.LegacyDec, error)
 }
 
 func (m *MockStakingKeeper) GetDelegation(ctx context.Context, delAddr sdk.AccAddress, valAddr sdk.ValAddress) (stakingtypes.Delegation, error) {
@@ -61,6 +62,14 @@ func (m *MockStakingKeeper) TotalBondedTokens(ctx context.Context) math.Int {
 	return math.NewInt(1000000)
 }
 
+func (m *MockStakingKeeper) Delegate(ctx context.Context, delAddr sdk.AccAddress, bondAmt math.Int, tokenSrc stakingtypes.BondStatus, validator stakingtypes.Validator, subtractAccount bool) (math.LegacyDec, error) {
+	if m.DelegateFn != nil {
+		return m.DelegateFn(ctx, delAddr, bondAmt, tokenSrc, validator, subtractAccount)
+	}
+	// Default implementation: return shares equal to tokens (1:1 ratio)
+	return math.LegacyNewDecFromInt(bondAmt), nil
+}
+
 // MockBankKeeper is a mock implementation of the BankKeeper interface
 type MockBankKeeper struct {
 	MintCoinsFn                      func(ctx context.Context, moduleName string, amt sdk.Coins) error
@@ -68,6 +77,9 @@ type MockBankKeeper struct {
 	GetDenomMetaDataFn               func(ctx context.Context, denom string) (banktypes.Metadata, bool)
 	SetDenomMetaDataFn               func(ctx context.Context, denomMetaData banktypes.Metadata)
 	GetSupplyFn                      func(ctx context.Context, denom string) sdk.Coin
+	GetBalanceFn                     func(ctx context.Context, addr sdk.AccAddress, denom string) sdk.Coin
+	SendCoinsFromAccountToModuleFn   func(ctx context.Context, senderAddr sdk.AccAddress, recipientModule string, amt sdk.Coins) error
+	BurnCoinsFn                      func(ctx context.Context, moduleName string, amt sdk.Coins) error
 }
 
 func (m *MockBankKeeper) MintCoins(ctx context.Context, moduleName string, amt sdk.Coins) error {
@@ -102,6 +114,27 @@ func (m *MockBankKeeper) GetSupply(ctx context.Context, denom string) sdk.Coin {
 		return m.GetSupplyFn(ctx, denom)
 	}
 	return sdk.NewCoin(denom, math.ZeroInt())
+}
+
+func (m *MockBankKeeper) GetBalance(ctx context.Context, addr sdk.AccAddress, denom string) sdk.Coin {
+	if m.GetBalanceFn != nil {
+		return m.GetBalanceFn(ctx, addr, denom)
+	}
+	return sdk.NewCoin(denom, math.ZeroInt())
+}
+
+func (m *MockBankKeeper) SendCoinsFromAccountToModule(ctx context.Context, senderAddr sdk.AccAddress, recipientModule string, amt sdk.Coins) error {
+	if m.SendCoinsFromAccountToModuleFn != nil {
+		return m.SendCoinsFromAccountToModuleFn(ctx, senderAddr, recipientModule, amt)
+	}
+	return nil
+}
+
+func (m *MockBankKeeper) BurnCoins(ctx context.Context, moduleName string, amt sdk.Coins) error {
+	if m.BurnCoinsFn != nil {
+		return m.BurnCoinsFn(ctx, moduleName, amt)
+	}
+	return nil
 }
 
 // MockAccountKeeper is a mock implementation of the AccountKeeper interface
