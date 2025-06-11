@@ -15,16 +15,26 @@ import (
 type Keeper struct {
 	storeService store.KVStoreService
 	cdc          codec.BinaryCodec
+	
+	stakingKeeper types.StakingKeeper
+	bankKeeper    types.BankKeeper
+	accountKeeper types.AccountKeeper
 }
 
 // NewKeeper creates a new liquid staking Keeper instance
 func NewKeeper(
 	storeService store.KVStoreService,
 	cdc codec.BinaryCodec,
+	sk types.StakingKeeper,
+	bk types.BankKeeper,
+	ak types.AccountKeeper,
 ) Keeper {
 	return Keeper{
-		storeService: storeService,
-		cdc:          cdc,
+		storeService:  storeService,
+		cdc:           cdc,
+		stakingKeeper: sk,
+		bankKeeper:    bk,
+		accountKeeper: ak,
 	}
 }
 

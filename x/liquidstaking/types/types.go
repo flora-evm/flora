@@ -40,6 +40,17 @@ func NewTokenizationRecord(id uint64, validator, owner string, sharesTokenized m
 	}
 }
 
+// NewTokenizationRecordWithDenom creates a new TokenizationRecord instance with denom
+func NewTokenizationRecordWithDenom(id uint64, validator, owner string, sharesTokenized math.Int, denom string) TokenizationRecord {
+	return TokenizationRecord{
+		Id:              id,
+		Validator:       validator,
+		Owner:           owner,
+		SharesTokenized: sharesTokenized,
+		Denom:           denom,
+	}
+}
+
 // DefaultParams returns default module parameters
 func DefaultParams() ModuleParams {
 	return ModuleParams{

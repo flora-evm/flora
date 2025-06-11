@@ -14,4 +14,8 @@ var (
 	ErrInvalidDelegator        = errorsmod.Register(ModuleName, 7, "invalid delegator")
 	ErrExceedsGlobalCap        = errorsmod.Register(ModuleName, 8, "exceeds global liquid staking cap")
 	ErrExceedsValidatorCap     = errorsmod.Register(ModuleName, 9, "exceeds validator liquid staking cap")
+	ErrTokenizationRecordAlreadyExists = errorsmod.Register(ModuleName, 10, "tokenization record already exists")
+	ErrDuplicateLiquidStakingToken = errorsmod.Register(ModuleName, 11, "liquid staking token denom already exists")
+	ErrInsufficientShares      = errorsmod.Register(ModuleName, 12, "insufficient delegation shares")
+	ErrDelegationNotFound      = errorsmod.Register(ModuleName, 13, "delegation not found")
 )

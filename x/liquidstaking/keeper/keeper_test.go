@@ -3,6 +3,7 @@ package keeper_test
 import (
 	"testing"
 
+	corestore "cosmossdk.io/core/store"
 	"cosmossdk.io/log"
 	"cosmossdk.io/store"
 	"cosmossdk.io/store/metrics"
@@ -31,8 +32,10 @@ func init() {
 type KeeperTestSuite struct {
 	suite.Suite
 
-	ctx    sdk.Context
-	keeper keeper.Keeper
+	ctx          sdk.Context
+	keeper       keeper.Keeper
+	storeService corestore.KVStoreService
+	cdc          codec.BinaryCodec
 }
 
 func (suite *KeeperTestSuite) SetupTest() {
@@ -49,7 +52,9 @@ func (suite *KeeperTestSuite) SetupTest() {
 	cdc := codec.NewProtoCodec(registry)
 
 	storeService := runtime.NewKVStoreService(storeKey)
-	suite.keeper = keeper.NewKeeper(storeService, cdc)
+	suite.storeService = storeService
+	suite.cdc = cdc
+	suite.keeper = keeper.NewKeeper(storeService, cdc, nil, nil, nil)
 
 	ctx := sdk.NewContext(stateStore, cmtproto.Header{}, false, log.NewNopLogger())
 	suite.ctx = ctx
@@ -188,4 +193,12 @@ func (suite *KeeperTestSuite) TestInitExportGenesis() {
 	suite.Equal(genesis.Params, exportedGenesis.Params)
 	suite.Equal(genesis.LastTokenizationRecordId, exportedGenesis.LastTokenizationRecordId)
 	suite.ElementsMatch(genesis.TokenizationRecords, exportedGenesis.TokenizationRecords)
+}
+
+// setupKeeperTestSuite creates a new test suite instance for testing
+func setupKeeperTestSuite(t *testing.T) *KeeperTestSuite {
+	suite := &KeeperTestSuite{}
+	suite.SetT(t)
+	suite.SetupTest()
+	return suite
 }

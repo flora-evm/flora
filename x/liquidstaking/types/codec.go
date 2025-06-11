@@ -4,17 +4,24 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	cdctypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/types/msgservice"
 )
 
 // RegisterCodec registers the necessary x/liquidstaking interfaces and concrete types
 // on the provided LegacyAmino codec. These types are used for Amino JSON serialization.
 func RegisterCodec(cdc *codec.LegacyAmino) {
-	// Register concrete types here when we have messages in later stages
+	cdc.RegisterConcrete(&MsgTokenizeShares{}, "liquidstaking/TokenizeShares", nil)
+	cdc.RegisterConcrete(&MsgRedeemTokens{}, "liquidstaking/RedeemTokens", nil)
 }
 
 // RegisterInterfaces registers the x/liquidstaking interfaces types with the interface registry
 func RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
-	// Register message interfaces here when we have messages in later stages
+	registry.RegisterImplementations((*sdk.Msg)(nil),
+		&MsgTokenizeShares{},
+		&MsgRedeemTokens{},
+	)
+
+	msgservice.RegisterMsgServiceDesc(registry, &_Msg_serviceDesc)
 }
 
 var (

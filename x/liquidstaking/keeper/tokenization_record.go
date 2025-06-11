@@ -90,6 +90,52 @@ func (k Keeper) GetTokenizationRecordByDenom(ctx sdk.Context, denom string) (typ
 	return k.GetTokenizationRecord(ctx, id)
 }
 
+// getTokenizationRecordByDenom returns the tokenization record ID for a specific denom
+func (k Keeper) getTokenizationRecordByDenom(ctx sdk.Context, denom string) (uint64, bool) {
+	store := k.storeService.OpenKVStore(ctx)
+	key := types.GetTokenizationRecordByDenomKey(denom)
+	
+	bz, err := store.Get(key)
+	if err != nil {
+		panic(err)
+	}
+	if bz == nil {
+		return 0, false
+	}
+	
+	// The value stored is the record ID
+	id := types.BytesToUint64(bz)
+	return id, true
+}
+
+// setTokenizationRecordDenomIndex sets the denom index for a tokenization record
+func (k Keeper) setTokenizationRecordDenomIndex(ctx sdk.Context, denom string, recordID uint64) {
+	store := k.storeService.OpenKVStore(ctx)
+	key := types.GetTokenizationRecordByDenomKey(denom)
+	value := types.Uint64ToBytes(recordID)
+	
+	err := store.Set(key, value)
+	if err != nil {
+		panic(err)
+	}
+}
+
+// removeTokenizationRecordDenomIndex removes the denom index for a tokenization record
+func (k Keeper) removeTokenizationRecordDenomIndex(ctx sdk.Context, denom string) {
+	store := k.storeService.OpenKVStore(ctx)
+	key := types.GetTokenizationRecordByDenomKey(denom)
+	
+	err := store.Delete(key)
+	if err != nil {
+		panic(err)
+	}
+}
+
+// deleteTokenizationRecordDenomIndex is an alias for removeTokenizationRecordDenomIndex
+func (k Keeper) deleteTokenizationRecordDenomIndex(ctx sdk.Context, denom string) {
+	k.removeTokenizationRecordDenomIndex(ctx, denom)
+}
+
 // GetTotalLiquidStaked returns the total amount of liquid staked tokens
 func (k Keeper) GetTotalLiquidStaked(ctx sdk.Context) math.Int {
 	store := k.storeService.OpenKVStore(ctx)
@@ -224,6 +270,53 @@ func (k Keeper) DeleteTokenizationRecord(ctx sdk.Context, id uint64) error {
 	
 	// Remove indexes
 	k.removeTokenizationRecordIndexes(ctx, record)
+	
+	return nil
+}
+
+// DeleteTokenizationRecordWithIndexes removes a tokenization record and all its indexes including denom index
+func (k Keeper) DeleteTokenizationRecordWithIndexes(ctx sdk.Context, id uint64) {
+	record, found := k.GetTokenizationRecord(ctx, id)
+	if !found {
+		return
+	}
+	
+	store := k.storeService.OpenKVStore(ctx)
+	
+	// Remove the record
+	key := types.GetTokenizationRecordKey(id)
+	err := store.Delete(key)
+	if err != nil {
+		panic(err)
+	}
+	
+	// Remove all indexes
+	k.removeTokenizationRecordIndexes(ctx, record)
+	
+	// Remove denom index if it exists
+	if record.Denom != "" {
+		k.removeTokenizationRecordDenomIndex(ctx, record.Denom)
+	}
+}
+
+// ValidateTokenizationRecord validates a tokenization record before storing
+func (k Keeper) ValidateTokenizationRecord(ctx sdk.Context, record types.TokenizationRecord) error {
+	// Basic validation
+	if err := record.Validate(); err != nil {
+		return err
+	}
+	
+	// Check if record ID already exists
+	if _, found := k.GetTokenizationRecord(ctx, record.Id); found {
+		return types.ErrTokenizationRecordAlreadyExists
+	}
+	
+	// Check if denom already exists
+	if _, found := k.GetTokenizationRecordByDenom(ctx, record.Denom); found {
+		return types.ErrDuplicateLiquidStakingToken
+	}
+	
+	// Additional validation can be added here in future stages
 	
 	return nil
 }

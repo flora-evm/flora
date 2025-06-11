@@ -26,6 +26,9 @@ message TokenizationRecord {
     (gogoproto.customtype) = "cosmossdk.io/math.Int",
     (gogoproto.nullable)   = false
   ];
+  
+  // denom is the denomination of the liquid staking token
+  string denom = 5;
 }
 
 // ModuleParams defines the parameters for the liquid staking module
