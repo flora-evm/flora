@@ -7,6 +7,9 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
+	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
+	channeltypes "github.com/cosmos/ibc-go/v8/modules/core/04-channel/types"
+	ibcexported "github.com/cosmos/ibc-go/v8/modules/core/exported"
 )
 
 // StakingKeeper defines the expected staking keeper interface
@@ -27,10 +30,13 @@ type StakingKeeper interface {
 	BondDenom(ctx context.Context) (string, error)
 	
 	// TotalBondedTokens returns the total amount of bonded tokens
-	TotalBondedTokens(ctx context.Context) math.Int
+	TotalBondedTokens(ctx context.Context) (math.Int, error)
 	
 	// Delegate performs a delegation from a delegator to a validator
 	Delegate(ctx context.Context, delAddr sdk.AccAddress, bondAmt math.Int, tokenSrc stakingtypes.BondStatus, validator stakingtypes.Validator, subtractAccount bool) (math.LegacyDec, error)
+	
+	// IterateValidators iterates through all validators
+	IterateValidators(ctx context.Context, fn func(index int64, validator stakingtypes.ValidatorI) (stop bool)) error
 }
 
 // BankKeeper defines the expected bank keeper interface
@@ -58,6 +64,9 @@ type BankKeeper interface {
 	
 	// BurnCoins burns coins from a module account
 	BurnCoins(ctx context.Context, moduleName string, amt sdk.Coins) error
+	
+	// SendCoins sends coins from one account to another
+	SendCoins(ctx context.Context, fromAddr sdk.AccAddress, toAddr sdk.AccAddress, amt sdk.Coins) error
 }
 
 // AccountKeeper defines the expected interface for the auth module
@@ -68,3 +77,62 @@ type AccountKeeper interface {
 	// GetModuleAddress returns the address of a module account
 	GetModuleAddress(moduleName string) sdk.AccAddress
 }
+
+// TransferKeeper defines the expected IBC transfer keeper interface
+type TransferKeeper interface {
+	// SendTransfer sends IBC tokens from sender to receiver
+	// Note: In the SDK, this might be lowercase sendTransfer
+	SendTransfer(
+		ctx sdk.Context,
+		sourcePort,
+		sourceChannel string,
+		token sdk.Coin,
+		sender sdk.AccAddress,
+		receiver string,
+		timeoutHeight clienttypes.Height,
+		timeoutTimestamp uint64,
+		memo string,
+	) (uint64, error)
+}
+
+// ChannelKeeper defines the expected IBC channel keeper interface  
+type ChannelKeeper interface {
+	// GetChannel returns a channel
+	GetChannel(ctx sdk.Context, portID, channelID string) (channeltypes.Channel, bool)
+	
+	// GetChannelClientState returns the client state for a channel
+	GetChannelClientState(ctx sdk.Context, portID, channelID string) (string, ibcexported.ClientState, error)
+}
+
+// DistributionKeeper defines the expected distribution keeper interface
+type DistributionKeeper interface {
+	// TODO: Add methods as needed for liquid staking functionality
+	// For now, we don't require any specific distribution keeper methods
+}
+
+// TokenFactoryKeeper is currently not used in the liquid staking module
+// The module uses the Bank module directly for minting and burning LSTs
+// This interface is kept for potential future integration
+//
+// type TokenFactoryKeeper interface {
+// 	// CreateDenom creates a new denom with the given subdenom controlled by the creator
+// 	CreateDenom(ctx context.Context, creator string, subdenom string) (string, error)
+// 	
+// 	// Mint mints tokens of a given denom to an account
+// 	Mint(ctx context.Context, mintToAddr string, coin sdk.Coin) error
+// 	
+// 	// Burn burns tokens from an account
+// 	Burn(ctx context.Context, burnFromAddr string, coin sdk.Coin) error
+// 	
+// 	// SetDenomMetadata sets the metadata for a denom
+// 	SetDenomMetadata(ctx context.Context, creator string, metadata banktypes.Metadata) error
+// 	
+// 	// GetDenomAuthorityMetadata returns the authority metadata for a specific denom
+// 	GetDenomAuthorityMetadata(ctx context.Context, denom string) (DenomAuthorityMetadata, error)
+// }
+//
+// // DenomAuthorityMetadata specifies metadata for a denom authority
+// type DenomAuthorityMetadata struct {
+// 	// Admin is the address that can perform admin operations
+// 	Admin string
+// }

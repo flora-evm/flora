@@ -1,0 +1,203 @@
+package cli
+
+import (
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/spf13/cobra"
+
+	"github.com/cosmos/cosmos-sdk/client"
+	"github.com/cosmos/cosmos-sdk/client/flags"
+	"github.com/cosmos/cosmos-sdk/client/tx"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+
+	"github.com/rollchains/flora/x/liquidstaking/types"
+)
+
+// GetAdminCmds returns liquid staking admin commands
+func GetAdminCmds() []*cobra.Command {
+	return []*cobra.Command{
+		CmdEmergencyPause(),
+		CmdEmergencyUnpause(),
+		CmdSetValidatorWhitelist(),
+		CmdSetValidatorBlacklist(),
+	}
+}
+
+// CmdEmergencyPause returns a command to pause the module
+func CmdEmergencyPause() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "emergency-pause [reason] [duration]",
+		Short: "Emergency pause the liquid staking module (authority only)",
+		Args:  cobra.ExactArgs(2),
+		Long: `Emergency pause the liquid staking module. This command can only be executed by the module authority.
+
+Arguments:
+- reason: Reason for the pause
+- duration: Duration in seconds (0 for permanent)
+
+Example:
+$ florad tx liquidstaking emergency-pause "Critical vulnerability detected" 3600 --from authority`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			clientCtx, err := client.GetClientTxContext(cmd)
+			if err != nil {
+				return err
+			}
+
+			reason := args[0]
+			durationStr := args[1]
+
+			duration, err := strconv.ParseInt(durationStr, 10, 64)
+			if err != nil {
+				return fmt.Errorf("invalid duration: %w", err)
+			}
+
+			from := clientCtx.GetFromAddress()
+
+			msg := &types.MsgEmergencyPause{
+				Authority: from.String(),
+				Reason:    reason,
+				Duration:  duration,
+			}
+
+			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
+		},
+	}
+
+	flags.AddTxFlagsToCmd(cmd)
+	return cmd
+}
+
+// CmdEmergencyUnpause returns a command to unpause the module
+func CmdEmergencyUnpause() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "emergency-unpause",
+		Short: "Emergency unpause the liquid staking module (authority only)",
+		Args:  cobra.NoArgs,
+		Long: `Emergency unpause the liquid staking module. This command can only be executed by the module authority.
+
+Example:
+$ florad tx liquidstaking emergency-unpause --from authority`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			clientCtx, err := client.GetClientTxContext(cmd)
+			if err != nil {
+				return err
+			}
+
+			from := clientCtx.GetFromAddress()
+
+			msg := &types.MsgEmergencyUnpause{
+				Authority: from.String(),
+			}
+
+			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
+		},
+	}
+
+	flags.AddTxFlagsToCmd(cmd)
+	return cmd
+}
+
+// CmdSetValidatorWhitelist returns a command to set the validator whitelist
+func CmdSetValidatorWhitelist() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "set-validator-whitelist [validators]",
+		Short: "Set the validator whitelist (authority only)",
+		Args:  cobra.MaximumNArgs(1),
+		Long: `Set the validator whitelist for liquid staking. Only whitelisted validators can receive liquid staking.
+If no validators are provided or the list is empty, all validators are allowed.
+
+Arguments:
+- validators: Comma-separated list of validator addresses
+
+Examples:
+# Set whitelist
+$ florad tx liquidstaking set-validator-whitelist floravaloper1abc...,floravaloper1def... --from authority
+
+# Clear whitelist (allow all validators)
+$ florad tx liquidstaking set-validator-whitelist "" --from authority`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			clientCtx, err := client.GetClientTxContext(cmd)
+			if err != nil {
+				return err
+			}
+
+			var validators []string
+			if len(args) > 0 && args[0] != "" {
+				validators = strings.Split(args[0], ",")
+				
+				// Validate all addresses
+				for _, val := range validators {
+					val = strings.TrimSpace(val)
+					if _, err := sdk.ValAddressFromBech32(val); err != nil {
+						return fmt.Errorf("invalid validator address %s: %w", val, err)
+					}
+				}
+			}
+
+			from := clientCtx.GetFromAddress()
+
+			msg := &types.MsgSetValidatorWhitelist{
+				Authority:  from.String(),
+				Validators: validators,
+			}
+
+			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
+		},
+	}
+
+	flags.AddTxFlagsToCmd(cmd)
+	return cmd
+}
+
+// CmdSetValidatorBlacklist returns a command to set the validator blacklist
+func CmdSetValidatorBlacklist() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "set-validator-blacklist [validators]",
+		Short: "Set the validator blacklist (authority only)",
+		Args:  cobra.MaximumNArgs(1),
+		Long: `Set the validator blacklist for liquid staking. Blacklisted validators cannot receive liquid staking.
+
+Arguments:
+- validators: Comma-separated list of validator addresses
+
+Examples:
+# Set blacklist
+$ florad tx liquidstaking set-validator-blacklist floravaloper1bad...,floravaloper1evil... --from authority
+
+# Clear blacklist
+$ florad tx liquidstaking set-validator-blacklist "" --from authority`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			clientCtx, err := client.GetClientTxContext(cmd)
+			if err != nil {
+				return err
+			}
+
+			var validators []string
+			if len(args) > 0 && args[0] != "" {
+				validators = strings.Split(args[0], ",")
+				
+				// Validate all addresses
+				for _, val := range validators {
+					val = strings.TrimSpace(val)
+					if _, err := sdk.ValAddressFromBech32(val); err != nil {
+						return fmt.Errorf("invalid validator address %s: %w", val, err)
+					}
+				}
+			}
+
+			from := clientCtx.GetFromAddress()
+
+			msg := &types.MsgSetValidatorBlacklist{
+				Authority:  from.String(),
+				Validators: validators,
+			}
+
+			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
+		},
+	}
+
+	flags.AddTxFlagsToCmd(cmd)
+	return cmd
+}

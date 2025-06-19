@@ -1,0 +1,508 @@
+package keeper_test
+
+import (
+	"context"
+	"fmt"
+	"testing"
+
+	"cosmossdk.io/math"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/types/query"
+	"github.com/stretchr/testify/require"
+
+	"github.com/rollchains/flora/x/liquidstaking/types"
+)
+
+func TestGRPCParams(t *testing.T) {
+	suite := setupTestSuite(t)
+
+	// Test default params
+	resp, err := suite.queryClient.Params(context.Background(), &types.QueryParamsRequest{})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, types.DefaultParams(), resp.Params)
+
+	// Update params
+	newParams := types.Params{
+		Enabled:                 false,
+		MinLiquidStakeAmount:    math.NewInt(5000000),
+		GlobalLiquidStakingCap:  math.LegacyNewDec(5).Quo(math.LegacyNewDec(10)), // 0.5
+		ValidatorLiquidCap:      math.LegacyNewDec(2).Quo(math.LegacyNewDec(10)), // 0.2
+	}
+	err = suite.keeper.SetParams(suite.ctx, newParams)
+	require.NoError(t, err)
+
+	// Query updated params
+	resp, err = suite.queryClient.Params(context.Background(), &types.QueryParamsRequest{})
+	require.NoError(t, err)
+	require.Equal(t, newParams, resp.Params)
+}
+
+func TestGRPCTokenizationRecord(t *testing.T) {
+	suite := setupTestSuite(t)
+
+	// Test non-existent record
+	_, err := suite.queryClient.TokenizationRecord(context.Background(), &types.QueryTokenizationRecordRequest{
+		RecordId: 1,
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not found")
+
+	// Create a record
+	record := types.TokenizationRecord{
+		Id:               1,
+		ValidatorAddress: "floravaloper1abc",
+		Owner:            "flora1xyz",
+		SharesDenomination: "shares/floravaloper1abc",
+		LiquidStakingTokenDenom: "liquidstake/floravaloper1abc/1",
+		SharesAmount:     math.LegacyNewDec(1000000),
+		Status:           types.TokenizationRecord_ACTIVE,
+		CreatedAt:        suite.ctx.BlockTime(),
+	}
+	suite.keeper.SetTokenizationRecord(suite.ctx, record)
+
+	// Query existing record
+	resp, err := suite.queryClient.TokenizationRecord(context.Background(), &types.QueryTokenizationRecordRequest{
+		RecordId: 1,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, record, resp.Record)
+
+	// Test invalid record ID
+	_, err = suite.queryClient.TokenizationRecord(context.Background(), &types.QueryTokenizationRecordRequest{
+		RecordId: 0,
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid record ID")
+}
+
+func TestGRPCTokenizationRecords(t *testing.T) {
+	suite := setupTestSuite(t)
+
+	// Test empty records
+	resp, err := suite.queryClient.TokenizationRecords(context.Background(), &types.QueryTokenizationRecordsRequest{})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Empty(t, resp.Records)
+
+	// Create multiple records
+	records := []types.TokenizationRecord{
+		{
+			Id:               1,
+			ValidatorAddress: "floravaloper1abc",
+			Owner:            "flora1xyz",
+			SharesDenomination: "shares/floravaloper1abc",
+			LiquidStakingTokenDenom: "liquidstake/floravaloper1abc/1",
+			SharesAmount:     math.LegacyNewDec(1000000),
+			Status:           types.TokenizationRecord_ACTIVE,
+			CreatedAt:        suite.ctx.BlockTime(),
+		},
+		{
+			Id:               2,
+			ValidatorAddress: "floravaloper1def",
+			Owner:            "flora1uvw",
+			SharesDenomination: "shares/floravaloper1def",
+			LiquidStakingTokenDenom: "liquidstake/floravaloper1def/2",
+			SharesAmount:     math.LegacyNewDec(2000000),
+			Status:           types.TokenizationRecord_ACTIVE,
+			CreatedAt:        suite.ctx.BlockTime(),
+		},
+		{
+			Id:               3,
+			ValidatorAddress: "floravaloper1abc",
+			Owner:            "flora1rst",
+			SharesDenomination: "shares/floravaloper1abc",
+			LiquidStakingTokenDenom: "liquidstake/floravaloper1abc/3",
+			SharesAmount:     math.LegacyNewDec(3000000),
+			Status:           types.TokenizationRecord_REDEEMED,
+			CreatedAt:        suite.ctx.BlockTime(),
+			RedeemedAt:       &suite.ctx.BlockTime(),
+		},
+	}
+
+	for _, record := range records {
+		suite.keeper.SetTokenizationRecord(suite.ctx, record)
+	}
+
+	// Query all records (should include all statuses)
+	resp, err = suite.queryClient.TokenizationRecords(context.Background(), &types.QueryTokenizationRecordsRequest{})
+	require.NoError(t, err)
+	require.Len(t, resp.Records, 3)
+	require.Equal(t, records, resp.Records)
+
+	// Test with pagination (when implemented)
+	// TODO: Add pagination tests once pagination is implemented
+}
+
+func TestGRPCTokenizationRecordsByValidator(t *testing.T) {
+	suite := setupTestSuite(t)
+
+	validatorAddr := "floravaloper1abc"
+
+	// Test empty records
+	resp, err := suite.queryClient.TokenizationRecordsByValidator(context.Background(), 
+		&types.QueryTokenizationRecordsByValidatorRequest{
+			ValidatorAddress: validatorAddr,
+		})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Empty(t, resp.Records)
+
+	// Create records for different validators
+	records := []types.TokenizationRecord{
+		{
+			Id:               1,
+			ValidatorAddress: validatorAddr,
+			Owner:            "flora1xyz",
+			SharesDenomination: fmt.Sprintf("shares/%s", validatorAddr),
+			LiquidStakingTokenDenom: fmt.Sprintf("liquidstake/%s/1", validatorAddr),
+			SharesAmount:     math.LegacyNewDec(1000000),
+			Status:           types.TokenizationRecord_ACTIVE,
+			CreatedAt:        suite.ctx.BlockTime(),
+		},
+		{
+			Id:               2,
+			ValidatorAddress: "floravaloper1def",
+			Owner:            "flora1uvw",
+			SharesDenomination: "shares/floravaloper1def",
+			LiquidStakingTokenDenom: "liquidstake/floravaloper1def/2",
+			SharesAmount:     math.LegacyNewDec(2000000),
+			Status:           types.TokenizationRecord_ACTIVE,
+			CreatedAt:        suite.ctx.BlockTime(),
+		},
+		{
+			Id:               3,
+			ValidatorAddress: validatorAddr,
+			Owner:            "flora1rst",
+			SharesDenomination: fmt.Sprintf("shares/%s", validatorAddr),
+			LiquidStakingTokenDenom: fmt.Sprintf("liquidstake/%s/3", validatorAddr),
+			SharesAmount:     math.LegacyNewDec(3000000),
+			Status:           types.TokenizationRecord_ACTIVE,
+			CreatedAt:        suite.ctx.BlockTime(),
+		},
+	}
+
+	for _, record := range records {
+		suite.keeper.SetTokenizationRecord(suite.ctx, record)
+	}
+
+	// Query records for specific validator
+	resp, err = suite.queryClient.TokenizationRecordsByValidator(context.Background(), 
+		&types.QueryTokenizationRecordsByValidatorRequest{
+			ValidatorAddress: validatorAddr,
+		})
+	require.NoError(t, err)
+	require.Len(t, resp.Records, 2)
+	require.Equal(t, records[0], resp.Records[0])
+	require.Equal(t, records[2], resp.Records[1])
+
+	// Test with empty validator address
+	_, err = suite.queryClient.TokenizationRecordsByValidator(context.Background(), 
+		&types.QueryTokenizationRecordsByValidatorRequest{
+			ValidatorAddress: "",
+		})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "empty validator address")
+}
+
+func TestGRPCTokenizationRecordsByOwner(t *testing.T) {
+	suite := setupTestSuite(t)
+
+	ownerAddr := "flora1xyz"
+
+	// Test empty records
+	resp, err := suite.queryClient.TokenizationRecordsByOwner(context.Background(), 
+		&types.QueryTokenizationRecordsByOwnerRequest{
+			OwnerAddress: ownerAddr,
+		})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Empty(t, resp.Records)
+
+	// Create records for different owners
+	records := []types.TokenizationRecord{
+		{
+			Id:               1,
+			ValidatorAddress: "floravaloper1abc",
+			Owner:            ownerAddr,
+			SharesDenomination: "shares/floravaloper1abc",
+			LiquidStakingTokenDenom: "liquidstake/floravaloper1abc/1",
+			SharesAmount:     math.LegacyNewDec(1000000),
+			Status:           types.TokenizationRecord_ACTIVE,
+			CreatedAt:        suite.ctx.BlockTime(),
+		},
+		{
+			Id:               2,
+			ValidatorAddress: "floravaloper1def",
+			Owner:            "flora1uvw",
+			SharesDenomination: "shares/floravaloper1def",
+			LiquidStakingTokenDenom: "liquidstake/floravaloper1def/2",
+			SharesAmount:     math.LegacyNewDec(2000000),
+			Status:           types.TokenizationRecord_ACTIVE,
+			CreatedAt:        suite.ctx.BlockTime(),
+		},
+		{
+			Id:               3,
+			ValidatorAddress: "floravaloper1ghi",
+			Owner:            ownerAddr,
+			SharesDenomination: "shares/floravaloper1ghi",
+			LiquidStakingTokenDenom: "liquidstake/floravaloper1ghi/3",
+			SharesAmount:     math.LegacyNewDec(3000000),
+			Status:           types.TokenizationRecord_ACTIVE,
+			CreatedAt:        suite.ctx.BlockTime(),
+		},
+	}
+
+	for _, record := range records {
+		suite.keeper.SetTokenizationRecord(suite.ctx, record)
+	}
+
+	// Query records for specific owner
+	resp, err = suite.queryClient.TokenizationRecordsByOwner(context.Background(), 
+		&types.QueryTokenizationRecordsByOwnerRequest{
+			OwnerAddress: ownerAddr,
+		})
+	require.NoError(t, err)
+	require.Len(t, resp.Records, 2)
+	require.Equal(t, records[0], resp.Records[0])
+	require.Equal(t, records[2], resp.Records[1])
+
+	// Test with empty owner address
+	_, err = suite.queryClient.TokenizationRecordsByOwner(context.Background(), 
+		&types.QueryTokenizationRecordsByOwnerRequest{
+			OwnerAddress: "",
+		})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "empty owner address")
+}
+
+func TestGRPCTotalLiquidStaked(t *testing.T) {
+	suite := setupTestSuite(t)
+
+	// Test zero total
+	resp, err := suite.queryClient.TotalLiquidStaked(context.Background(), &types.QueryTotalLiquidStakedRequest{})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.True(t, resp.TotalLiquidStaked.IsZero())
+
+	// Set some liquid staking amounts
+	suite.keeper.SetValidatorLiquidStakingAmount(suite.ctx, "floravaloper1abc", math.NewInt(1000000))
+	suite.keeper.SetValidatorLiquidStakingAmount(suite.ctx, "floravaloper1def", math.NewInt(2000000))
+	suite.keeper.SetValidatorLiquidStakingAmount(suite.ctx, "floravaloper1ghi", math.NewInt(3000000))
+
+	// Query total
+	resp, err = suite.queryClient.TotalLiquidStaked(context.Background(), &types.QueryTotalLiquidStakedRequest{})
+	require.NoError(t, err)
+	require.Equal(t, math.NewInt(6000000), resp.TotalLiquidStaked)
+}
+
+func TestGRPCValidatorLiquidStaked(t *testing.T) {
+	suite := setupTestSuite(t)
+
+	validatorAddr := "floravaloper1abc"
+
+	// Test zero amount
+	resp, err := suite.queryClient.ValidatorLiquidStaked(context.Background(), 
+		&types.QueryValidatorLiquidStakedRequest{
+			ValidatorAddress: validatorAddr,
+		})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.True(t, resp.LiquidStaked.IsZero())
+
+	// Set liquid staking amount
+	amount := math.NewInt(5000000)
+	suite.keeper.SetValidatorLiquidStakingAmount(suite.ctx, validatorAddr, amount)
+
+	// Query amount
+	resp, err = suite.queryClient.ValidatorLiquidStaked(context.Background(), 
+		&types.QueryValidatorLiquidStakedRequest{
+			ValidatorAddress: validatorAddr,
+		})
+	require.NoError(t, err)
+	require.Equal(t, amount, resp.LiquidStaked)
+
+	// Test with empty validator address
+	_, err = suite.queryClient.ValidatorLiquidStaked(context.Background(), 
+		&types.QueryValidatorLiquidStakedRequest{
+			ValidatorAddress: "",
+		})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "empty validator address")
+}
+
+// TestGRPCPaginatedQueries tests pagination functionality (TODO: implement when pagination is added)
+func TestGRPCPaginatedQueries(t *testing.T) {
+	suite := setupTestSuite(t)
+
+	// Create many records for pagination testing
+	numRecords := 50
+	for i := 1; i <= numRecords; i++ {
+		record := types.TokenizationRecord{
+			Id:               uint64(i),
+			ValidatorAddress: fmt.Sprintf("floravaloper%d", i%3+1),
+			Owner:            fmt.Sprintf("flora%d", i%5+1),
+			SharesDenomination: fmt.Sprintf("shares/floravaloper%d", i%3+1),
+			LiquidStakingTokenDenom: fmt.Sprintf("liquidstake/floravaloper%d/%d", i%3+1, i),
+			SharesAmount:     math.LegacyNewDec(int64(i * 100000)),
+			Status:           types.TokenizationRecord_ACTIVE,
+			CreatedAt:        suite.ctx.BlockTime(),
+		}
+		suite.keeper.SetTokenizationRecord(suite.ctx, record)
+	}
+
+	t.Run("TokenizationRecords pagination", func(t *testing.T) {
+		// TODO: Test pagination when implemented
+		// This is a placeholder for future pagination tests
+		
+		// Test default pagination
+		resp, err := suite.queryClient.TokenizationRecords(context.Background(), 
+			&types.QueryTokenizationRecordsRequest{
+				Pagination: &query.PageRequest{
+					Limit: 10,
+				},
+			})
+		require.NoError(t, err)
+		// Currently returns all records as pagination is not implemented
+		require.Equal(t, numRecords, len(resp.Records))
+		
+		// TODO: When pagination is implemented, verify:
+		// - resp.Pagination.NextKey is set correctly
+		// - Only 10 records are returned
+		// - Records are in the expected order
+		// - Subsequent pages can be retrieved using NextKey
+	})
+}
+
+// TestGRPCQueryValidation tests input validation for all queries
+func TestGRPCQueryValidation(t *testing.T) {
+	suite := setupTestSuite(t)
+
+	testCases := []struct {
+		name        string
+		queryFunc   func() error
+		expectedErr string
+	}{
+		{
+			name: "invalid record ID",
+			queryFunc: func() error {
+				_, err := suite.queryClient.TokenizationRecord(context.Background(), 
+					&types.QueryTokenizationRecordRequest{RecordId: 0})
+				return err
+			},
+			expectedErr: "invalid record ID",
+		},
+		{
+			name: "empty validator address",
+			queryFunc: func() error {
+				_, err := suite.queryClient.TokenizationRecordsByValidator(context.Background(), 
+					&types.QueryTokenizationRecordsByValidatorRequest{ValidatorAddress: ""})
+				return err
+			},
+			expectedErr: "empty validator address",
+		},
+		{
+			name: "empty owner address",
+			queryFunc: func() error {
+				_, err := suite.queryClient.TokenizationRecordsByOwner(context.Background(), 
+					&types.QueryTokenizationRecordsByOwnerRequest{OwnerAddress: ""})
+				return err
+			},
+			expectedErr: "empty owner address",
+		},
+		{
+			name: "empty validator for liquid staked query",
+			queryFunc: func() error {
+				_, err := suite.queryClient.ValidatorLiquidStaked(context.Background(), 
+					&types.QueryValidatorLiquidStakedRequest{ValidatorAddress: ""})
+				return err
+			},
+			expectedErr: "empty validator address",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.queryFunc()
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tc.expectedErr)
+		})
+	}
+}
+
+// TestGRPCConcurrentQueries tests concurrent access to queries
+func TestGRPCConcurrentQueries(t *testing.T) {
+	suite := setupTestSuite(t)
+
+	// Create test data
+	record := types.TokenizationRecord{
+		Id:               1,
+		ValidatorAddress: "floravaloper1abc",
+		Owner:            "flora1xyz",
+		SharesDenomination: "shares/floravaloper1abc",
+		LiquidStakingTokenDenom: "liquidstake/floravaloper1abc/1",
+		SharesAmount:     math.LegacyNewDec(1000000),
+		Status:           types.TokenizationRecord_ACTIVE,
+		CreatedAt:        suite.ctx.BlockTime(),
+	}
+	suite.keeper.SetTokenizationRecord(suite.ctx, record)
+	suite.keeper.SetValidatorLiquidStakingAmount(suite.ctx, "floravaloper1abc", math.NewInt(1000000))
+
+	// Run concurrent queries
+	done := make(chan bool, 5)
+	
+	// Concurrent params queries
+	go func() {
+		for i := 0; i < 10; i++ {
+			_, err := suite.queryClient.Params(context.Background(), &types.QueryParamsRequest{})
+			require.NoError(t, err)
+		}
+		done <- true
+	}()
+
+	// Concurrent record queries
+	go func() {
+		for i := 0; i < 10; i++ {
+			_, err := suite.queryClient.TokenizationRecord(context.Background(), 
+				&types.QueryTokenizationRecordRequest{RecordId: 1})
+			require.NoError(t, err)
+		}
+		done <- true
+	}()
+
+	// Concurrent total liquid staked queries
+	go func() {
+		for i := 0; i < 10; i++ {
+			_, err := suite.queryClient.TotalLiquidStaked(context.Background(), 
+				&types.QueryTotalLiquidStakedRequest{})
+			require.NoError(t, err)
+		}
+		done <- true
+	}()
+
+	// Concurrent validator queries
+	go func() {
+		for i := 0; i < 10; i++ {
+			_, err := suite.queryClient.TokenizationRecordsByValidator(context.Background(), 
+				&types.QueryTokenizationRecordsByValidatorRequest{ValidatorAddress: "floravaloper1abc"})
+			require.NoError(t, err)
+		}
+		done <- true
+	}()
+
+	// Concurrent owner queries
+	go func() {
+		for i := 0; i < 10; i++ {
+			_, err := suite.queryClient.TokenizationRecordsByOwner(context.Background(), 
+				&types.QueryTokenizationRecordsByOwnerRequest{OwnerAddress: "flora1xyz"})
+			require.NoError(t, err)
+		}
+		done <- true
+	}()
+
+	// Wait for all goroutines to complete
+	for i := 0; i < 5; i++ {
+		<-done
+	}
+}

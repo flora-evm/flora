@@ -1,0 +1,301 @@
+package keeper_test
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"cosmossdk.io/math"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/stretchr/testify/suite"
+
+	"github.com/rollchains/flora/x/liquidstaking/keeper"
+	"github.com/rollchains/flora/x/liquidstaking/testutil/mocks"
+	"github.com/rollchains/flora/x/liquidstaking/types"
+)
+
+type AutoCompoundTestSuite struct {
+	KeeperTestSuite
+	
+	// Additional fields for testing
+	vals  []sdk.ValAddress
+	addrs []sdk.AccAddress
+	distributionKeeper *mocks.MockDistributionKeeper
+	accountKeeper      *mocks.MockAccountKeeper
+}
+
+func TestAutoCompoundTestSuite(t *testing.T) {
+	suite.Run(t, new(AutoCompoundTestSuite))
+}
+
+func (suite *AutoCompoundTestSuite) SetupTest() {
+	suite.KeeperTestSuite.SetupTest()
+	
+	// Initialize test addresses
+	suite.vals = []sdk.ValAddress{
+		sdk.ValAddress([]byte("validator1")),
+		sdk.ValAddress([]byte("validator2")),
+		sdk.ValAddress([]byte("validator3")),
+	}
+	
+	suite.addrs = []sdk.AccAddress{
+		sdk.AccAddress([]byte("addr1")),
+		sdk.AccAddress([]byte("addr2")),
+		sdk.AccAddress([]byte("addr3")),
+	}
+	
+	// Set the distribution keeper reference
+	suite.distributionKeeper = suite.mockDistributionKeeper
+	suite.accountKeeper = suite.mockAccountKeeper
+}
+
+func (suite *AutoCompoundTestSuite) TestAutoCompoundFrequency() {
+	ctx := suite.ctx
+	k := suite.keeper
+	
+	// Test with auto-compound disabled
+	params := types.DefaultParams()
+	params.AutoCompoundEnabled = false
+	k.SetParams(ctx, params)
+	
+	err := k.BeginBlocker(ctx)
+	suite.Require().NoError(err)
+	
+	// No height should be set when disabled
+	lastHeight := k.GetLastAutoCompoundHeight(ctx)
+	suite.Require().Equal(int64(0), lastHeight)
+	
+	// Enable auto-compound
+	params.AutoCompoundEnabled = true
+	params.AutoCompoundFrequencyBlocks = 100
+	k.SetParams(ctx, params)
+	
+	// First run should execute
+	err = k.BeginBlocker(ctx)
+	suite.Require().NoError(err)
+	
+	// Height should be updated
+	lastHeight = k.GetLastAutoCompoundHeight(ctx)
+	suite.Require().Equal(ctx.BlockHeight(), lastHeight)
+	
+	// Advance 50 blocks (less than frequency)
+	ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 50)
+	suite.ctx = ctx
+	
+	// Should not run again
+	originalHeight := k.GetLastAutoCompoundHeight(ctx)
+	err = k.BeginBlocker(ctx)
+	suite.Require().NoError(err)
+	suite.Require().Equal(originalHeight, k.GetLastAutoCompoundHeight(ctx))
+	
+	// Advance to exactly frequency
+	ctx = ctx.WithBlockHeight(lastHeight + params.AutoCompoundFrequencyBlocks)
+	suite.ctx = ctx
+	
+	// Should run now
+	err = k.BeginBlocker(ctx)
+	suite.Require().NoError(err)
+	suite.Require().Equal(ctx.BlockHeight(), k.GetLastAutoCompoundHeight(ctx))
+}
+
+func (suite *AutoCompoundTestSuite) TestValidateAutoCompoundParams() {
+	// Test valid params
+	params := types.DefaultParams()
+	params.AutoCompoundEnabled = true
+	params.AutoCompoundFrequencyBlocks = 100
+	params.MaxRateChangePerUpdate = math.LegacyNewDecWithPrec(5, 2) // 5%
+	params.MinBlocksBetweenUpdates = 10
+	
+	err := keeper.ValidateAutoCompoundParams(params)
+	suite.Require().NoError(err)
+	
+	// Test invalid frequency when enabled
+	params.AutoCompoundFrequencyBlocks = 0
+	err = keeper.ValidateAutoCompoundParams(params)
+	suite.Require().Error(err)
+	suite.Require().Contains(err.Error(), "frequency must be positive")
+	
+	// Test negative max rate change
+	params.AutoCompoundFrequencyBlocks = 100
+	params.MaxRateChangePerUpdate = math.LegacyNewDec(-1)
+	err = keeper.ValidateAutoCompoundParams(params)
+	suite.Require().Error(err)
+	suite.Require().Contains(err.Error(), "max rate change must be between 0 and 1")
+	
+	// Test max rate change > 100%
+	params.MaxRateChangePerUpdate = math.LegacyNewDecWithPrec(150, 2) // 150%
+	err = keeper.ValidateAutoCompoundParams(params)
+	suite.Require().Error(err)
+	suite.Require().Contains(err.Error(), "max rate change must be between 0 and 1")
+	
+	// Test negative min blocks
+	params.MaxRateChangePerUpdate = math.LegacyNewDecWithPrec(5, 2)
+	params.MinBlocksBetweenUpdates = -1
+	err = keeper.ValidateAutoCompoundParams(params)
+	suite.Require().Error(err)
+	suite.Require().Contains(err.Error(), "min blocks between updates cannot be negative")
+}
+
+func (suite *AutoCompoundTestSuite) TestApplyRateLimits() {
+	ctx := suite.ctx
+	k := suite.keeper
+	
+	// Set params with 5% max change
+	params := types.DefaultParams()
+	params.MaxRateChangePerUpdate = math.LegacyNewDecWithPrec(5, 2) // 5%
+	k.SetParams(ctx, params)
+	
+	valAddr := suite.vals[0].String()
+	
+	// Test first rate (no old rate)
+	oldRate := math.LegacyZeroDec()
+	newRate := math.LegacyNewDecWithPrec(15, 1) // 1.5
+	
+	appliedRate, withinLimits := k.ApplyRateLimits(ctx, valAddr, oldRate, newRate)
+	suite.Require().True(withinLimits)
+	suite.Require().Equal(newRate, appliedRate)
+	
+	// Test rate increase within limit
+	oldRate = math.LegacyOneDec() // 1.0
+	newRate = math.LegacyNewDecWithPrec(104, 2) // 1.04 (4% increase)
+	
+	appliedRate, withinLimits = k.ApplyRateLimits(ctx, valAddr, oldRate, newRate)
+	suite.Require().True(withinLimits)
+	suite.Require().Equal(newRate, appliedRate)
+	
+	// Test rate increase exceeding limit
+	oldRate = math.LegacyOneDec() // 1.0
+	newRate = math.LegacyNewDecWithPrec(110, 2) // 1.10 (10% increase)
+	
+	appliedRate, withinLimits = k.ApplyRateLimits(ctx, valAddr, oldRate, newRate)
+	suite.Require().False(withinLimits)
+	suite.Require().Equal(math.LegacyNewDecWithPrec(105, 2), appliedRate) // Capped at 1.05
+	
+	// Test rate decrease exceeding limit
+	oldRate = math.LegacyNewDec(2) // 2.0
+	newRate = math.LegacyNewDecWithPrec(180, 2) // 1.80 (10% decrease)
+	
+	appliedRate, withinLimits = k.ApplyRateLimits(ctx, valAddr, oldRate, newRate)
+	suite.Require().False(withinLimits)
+	suite.Require().Equal(math.LegacyNewDecWithPrec(190, 2), appliedRate) // Capped at 1.90 (5% decrease)
+}
+
+func (suite *AutoCompoundTestSuite) TestCanUpdateExchangeRate() {
+	ctx := suite.ctx
+	k := suite.keeper
+	
+	// Set params
+	params := types.DefaultParams()
+	params.MinBlocksBetweenUpdates = 100
+	k.SetParams(ctx, params)
+	
+	valAddr := suite.vals[0].String()
+	
+	// Can update when no rate exists
+	canUpdate := k.CanUpdateExchangeRate(ctx, valAddr)
+	suite.Require().True(canUpdate)
+	
+	// Set an exchange rate
+	k.SetExchangeRate(ctx, valAddr, math.LegacyOneDec(), ctx.BlockTime())
+	
+	// Cannot update immediately
+	canUpdate = k.CanUpdateExchangeRate(ctx, valAddr)
+	suite.Require().False(canUpdate)
+	
+	// Advance time but not enough blocks (50 blocks * 3 seconds = 150 seconds)
+	ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 50).WithBlockTime(ctx.BlockTime().Add(150 * time.Second))
+	suite.ctx = ctx
+	
+	canUpdate = k.CanUpdateExchangeRate(ctx, valAddr)
+	suite.Require().False(canUpdate)
+	
+	// Advance enough blocks (101 blocks * 3 seconds = 303 seconds)
+	ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 51).WithBlockTime(ctx.BlockTime().Add(153 * time.Second))
+	suite.ctx = ctx
+	
+	canUpdate = k.CanUpdateExchangeRate(ctx, valAddr)
+	suite.Require().True(canUpdate)
+}
+
+func (suite *AutoCompoundTestSuite) TestGetSetLastAutoCompoundHeight() {
+	ctx := suite.ctx
+	k := suite.keeper
+	
+	// Initial height should be 0
+	height := k.GetLastAutoCompoundHeight(ctx)
+	suite.Require().Equal(int64(0), height)
+	
+	// Set height
+	testHeight := int64(12345)
+	k.SetLastAutoCompoundHeight(ctx, testHeight)
+	
+	// Get height
+	height = k.GetLastAutoCompoundHeight(ctx)
+	suite.Require().Equal(testHeight, height)
+	
+	// Update height
+	newHeight := int64(67890)
+	k.SetLastAutoCompoundHeight(ctx, newHeight)
+	
+	height = k.GetLastAutoCompoundHeight(ctx)
+	suite.Require().Equal(newHeight, height)
+}
+
+func (suite *AutoCompoundTestSuite) TestAutoCompoundAllValidators() {
+	ctx := suite.ctx
+	k := suite.keeper
+	
+	// Setup: Create LST tokens for a validator
+	valAddr := suite.vals[0]
+	valStr := valAddr.String()
+	
+	// For this test, we'll just set an exchange rate directly
+	// In a real scenario, LST tokens would exist from tokenization
+	k.SetExchangeRate(ctx, valStr, math.LegacyOneDec(), ctx.BlockTime())
+	
+	// Mock distribution keeper to return some rewards
+	suite.distributionKeeper.GetValidatorAccumulatedRewardsFn = func(ctx context.Context, val sdk.ValAddress) (sdk.DecCoins, error) {
+		return sdk.NewDecCoins(sdk.NewDecCoin("ufoo", math.NewInt(100))), nil
+	}
+	
+	// Enable auto-compound
+	params := types.DefaultParams()
+	params.AutoCompoundEnabled = true
+	k.SetParams(ctx, params)
+	
+	// Run auto-compound
+	err := k.AutoCompoundAllValidators(ctx)
+	suite.Require().NoError(err)
+	
+	// Verify last compound height was updated
+	suite.Require().Equal(ctx.BlockHeight(), k.GetLastAutoCompoundHeight(ctx))
+}
+
+// TestCompoundValidatorRewards tests the compound rewards functionality
+func (suite *AutoCompoundTestSuite) TestCompoundValidatorRewards() {
+	ctx := suite.ctx
+	k := suite.keeper
+	
+	valAddr := suite.vals[0]
+	moduleAddr := suite.accountKeeper.GetModuleAddress(types.ModuleName)
+	
+	// Mock distribution keeper to return rewards
+	rewardAmount := math.NewInt(1000)
+	suite.distributionKeeper.GetValidatorAccumulatedRewardsFn = func(ctx context.Context, val sdk.ValAddress) (sdk.DecCoins, error) {
+		return sdk.NewDecCoins(sdk.NewDecCoin("ufoo", rewardAmount)), nil
+	}
+	
+	// Test compounding
+	compounded, err := k.CompoundValidatorRewards(ctx, valAddr, moduleAddr)
+	suite.Require().NoError(err)
+	suite.Require().Equal(rewardAmount, compounded)
+	
+	// Test with no rewards
+	suite.distributionKeeper.GetValidatorAccumulatedRewardsFn = func(ctx context.Context, val sdk.ValAddress) (sdk.DecCoins, error) {
+		return sdk.DecCoins{}, nil
+	}
+	
+	compounded2, err := k.CompoundValidatorRewards(ctx, valAddr, moduleAddr)
+	suite.Require().NoError(err)
+	suite.Require().True(compounded2.IsZero())
+}

@@ -1,0 +1,308 @@
+package keeper_test
+
+import (
+	"testing"
+
+	"cosmossdk.io/math"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/stretchr/testify/require"
+
+	"github.com/rollchains/flora/x/liquidstaking/keeper"
+	"github.com/rollchains/flora/x/liquidstaking/types"
+)
+
+func TestGenesisImportExport(t *testing.T) {
+	// Setup first keeper instance
+	suite1 := setupKeeperTestSuite(t)
+	ctx1 := suite1.ctx
+	keeper1 := suite1.keeper
+
+	// Create test data
+	params := types.ModuleParams{
+		Enabled:                true,
+		MinLiquidStakeAmount:   math.NewInt(100000),
+		GlobalLiquidStakingCap: math.LegacyNewDecWithPrec(25, 2), // 25%
+		ValidatorLiquidCap:     math.LegacyNewDecWithPrec(10, 2), // 10%
+	}
+
+	records := []types.TokenizationRecord{
+		{
+			Id:              1,
+			Validator:       "floravaloper1validator1",
+			Owner:           "flora1owner1",
+			SharesTokenized: math.NewInt(1000000),
+			Denom:           types.GenerateLiquidStakingTokenDenom("floravaloper1validator1", 1),
+		},
+		{
+			Id:              2,
+			Validator:       "floravaloper1validator2",
+			Owner:           "flora1owner2",
+			SharesTokenized: math.NewInt(2000000),
+			Denom:           types.GenerateLiquidStakingTokenDenom("floravaloper1validator2", 2),
+		},
+		{
+			Id:              3,
+			Validator:       "floravaloper1validator1",
+			Owner:           "flora1owner3",
+			SharesTokenized: math.NewInt(3000000),
+			Denom:           types.GenerateLiquidStakingTokenDenom("floravaloper1validator1", 3),
+		},
+	}
+
+	// Create genesis state
+	genState := types.GenesisState{
+		Params:                   params,
+		TokenizationRecords:      records,
+		LastTokenizationRecordId: 3,
+	}
+
+	// Import genesis
+	keeper1.InitGenesis(ctx1, genState)
+
+	// Export genesis
+	exportedState := keeper1.ExportGenesis(ctx1)
+
+	// Verify exported state matches original
+	require.Equal(t, genState.Params, exportedState.Params)
+	require.Equal(t, genState.LastTokenizationRecordId, exportedState.LastTokenizationRecordId)
+	require.Len(t, exportedState.TokenizationRecords, len(genState.TokenizationRecords))
+
+	// Create a map for easier comparison (order might differ)
+	recordMap := make(map[uint64]types.TokenizationRecord)
+	for _, record := range exportedState.TokenizationRecords {
+		recordMap[record.Id] = record
+	}
+
+	for _, expectedRecord := range genState.TokenizationRecords {
+		actualRecord, found := recordMap[expectedRecord.Id]
+		require.True(t, found, "record ID %d not found in exported state", expectedRecord.Id)
+		require.Equal(t, expectedRecord, actualRecord)
+	}
+
+	// Setup second keeper instance
+	suite2 := setupKeeperTestSuite(t)
+	ctx2 := suite2.ctx
+	keeper2 := suite2.keeper
+
+	// Import the exported genesis into the new keeper
+	keeper2.InitGenesis(ctx2, *exportedState)
+
+	// Verify all data was imported correctly
+	// Check params
+	importedParams := keeper2.GetParams(ctx2)
+	require.Equal(t, params, importedParams)
+
+	// Check last tokenization record ID
+	lastID := keeper2.GetLastTokenizationRecordID(ctx2)
+	require.Equal(t, uint64(3), lastID)
+
+	// Check all records
+	for _, expectedRecord := range records {
+		actualRecord, found := keeper2.GetTokenizationRecord(ctx2, expectedRecord.Id)
+		require.True(t, found)
+		require.Equal(t, expectedRecord, actualRecord)
+	}
+
+	// Check indexes
+	// Validator index
+	validator1Records := keeper2.GetTokenizationRecordsByValidator(ctx2, "floravaloper1validator1")
+	require.Len(t, validator1Records, 2)
+
+	validator2Records := keeper2.GetTokenizationRecordsByValidator(ctx2, "floravaloper1validator2")
+	require.Len(t, validator2Records, 1)
+
+	// Owner index
+	owner1Records := keeper2.GetTokenizationRecordsByOwner(ctx2, "flora1owner1")
+	require.Len(t, owner1Records, 1)
+	require.Equal(t, uint64(1), owner1Records[0].Id)
+
+	// Denom index
+	recordID, found := keeper2.getTokenizationRecordByDenom(ctx2, types.GenerateLiquidStakingTokenDenom("floravaloper1validator1", 1))
+	require.True(t, found)
+	require.Equal(t, uint64(1), recordID)
+
+	// Check liquid staking counters
+	totalLiquidStaked := keeper2.GetTotalLiquidStaked(ctx2)
+	require.Equal(t, math.NewInt(6000000), totalLiquidStaked)
+
+	validator1LiquidStaked := keeper2.GetValidatorLiquidStaked(ctx2, "floravaloper1validator1")
+	require.Equal(t, math.NewInt(4000000), validator1LiquidStaked)
+
+	validator2LiquidStaked := keeper2.GetValidatorLiquidStaked(ctx2, "floravaloper1validator2")
+	require.Equal(t, math.NewInt(2000000), validator2LiquidStaked)
+
+	// Export again from the second keeper and verify it matches
+	reExportedState := keeper2.ExportGenesis(ctx2)
+	require.Equal(t, exportedState.Params, reExportedState.Params)
+	require.Equal(t, exportedState.LastTokenizationRecordId, reExportedState.LastTokenizationRecordId)
+	require.Len(t, reExportedState.TokenizationRecords, len(exportedState.TokenizationRecords))
+}
+
+func TestGenesisImportExportWithModifications(t *testing.T) {
+	// Setup keeper
+	suite := setupKeeperTestSuite(t)
+	ctx := suite.ctx
+	k := suite.keeper
+	msgServer := keeper.NewMsgServerImpl(k)
+
+	// Start with empty genesis
+	emptyGenesis := types.DefaultGenesisState()
+	k.InitGenesis(ctx, *emptyGenesis)
+
+	// Create test accounts and validator
+	delegator := suite.createAccount(t, "delegator")
+	validator := suite.addValidator(t)
+	owner := suite.createAccount(t, "owner")
+
+	// Fund and delegate
+	amount := sdk.NewCoin("flora", math.NewInt(5000000))
+	suite.fundAccount(t, delegator, amount)
+	suite.delegate(t, delegator, validator.OperatorAddress, amount.Amount)
+
+	// Perform some operations
+	// Tokenize shares multiple times
+	for i := 0; i < 3; i++ {
+		msg := &types.MsgTokenizeShares{
+			DelegatorAddress: delegator.String(),
+			ValidatorAddress: validator.OperatorAddress,
+			OwnerAddress:     owner.String(),
+			Shares:           sdk.NewDecCoinFromDec("flora", math.LegacyNewDec(1000000)),
+		}
+		_, err := msgServer.TokenizeShares(ctx, msg)
+		require.NoError(t, err)
+	}
+
+	// Export genesis after operations
+	exportedState := k.ExportGenesis(ctx)
+
+	// Verify exported state
+	require.Equal(t, uint64(3), exportedState.LastTokenizationRecordId)
+	require.Len(t, exportedState.TokenizationRecords, 3)
+
+	// Verify records have proper denoms
+	for _, record := range exportedState.TokenizationRecords {
+		require.NotEmpty(t, record.Denom)
+		require.True(t, types.IsLiquidStakingTokenDenom(record.Denom))
+		expectedDenom := types.GenerateLiquidStakingTokenDenom(record.Validator, record.Id)
+		require.Equal(t, expectedDenom, record.Denom)
+	}
+
+	// Setup new keeper
+	suite2 := setupKeeperTestSuite(t)
+	ctx2 := suite2.ctx
+	keeper2 := suite2.keeper
+
+	// Import the exported genesis
+	keeper2.InitGenesis(ctx2, *exportedState)
+
+	// Verify all records were imported
+	allRecords := keeper2.GetAllTokenizationRecords(ctx2)
+	require.Len(t, allRecords, 3)
+
+	// Verify counters
+	totalLiquidStaked := keeper2.GetTotalLiquidStaked(ctx2)
+	require.Equal(t, math.NewInt(3000000), totalLiquidStaked) // 3 * 1M
+
+	validatorLiquidStaked := keeper2.GetValidatorLiquidStaked(ctx2, validator.OperatorAddress)
+	require.Equal(t, math.NewInt(3000000), validatorLiquidStaked)
+}
+
+func TestGenesisImportExportEdgeCases(t *testing.T) {
+	testCases := []struct {
+		name     string
+		genState types.GenesisState
+	}{
+		{
+			name:     "empty state",
+			genState: *types.DefaultGenesisState(),
+		},
+		{
+			name: "single record",
+			genState: types.GenesisState{
+				Params: types.DefaultParams(),
+				TokenizationRecords: []types.TokenizationRecord{
+					{
+						Id:              1,
+						Validator:       "floravaloper1validator1",
+						Owner:           "flora1owner1",
+						SharesTokenized: math.NewInt(1000000),
+						Denom:           types.GenerateLiquidStakingTokenDenom("floravaloper1validator1", 1),
+					},
+				},
+				LastTokenizationRecordId: 1,
+			},
+		},
+		{
+			name: "max parameters",
+			genState: types.GenesisState{
+				Params: types.ModuleParams{
+					Enabled:                true,
+					MinLiquidStakeAmount:   math.NewInt(1),                       // minimum
+					GlobalLiquidStakingCap: math.LegacyNewDecWithPrec(100, 2),   // 100%
+					ValidatorLiquidCap:     math.LegacyNewDecWithPrec(100, 2),   // 100%
+				},
+				TokenizationRecords:      []types.TokenizationRecord{},
+				LastTokenizationRecordId: 0,
+			},
+		},
+		{
+			name: "large record ID",
+			genState: types.GenesisState{
+				Params: types.DefaultParams(),
+				TokenizationRecords: []types.TokenizationRecord{
+					{
+						Id:              999999,
+						Validator:       "floravaloper1validator1",
+						Owner:           "flora1owner1",
+						SharesTokenized: math.NewInt(1000000),
+						Denom:           types.GenerateLiquidStakingTokenDenom("floravaloper1validator1", 999999),
+					},
+				},
+				LastTokenizationRecordId: 999999,
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Setup first keeper
+			suite1 := setupKeeperTestSuite(t)
+			ctx1 := suite1.ctx
+			keeper1 := suite1.keeper
+
+			// Import genesis
+			keeper1.InitGenesis(ctx1, tc.genState)
+
+			// Export genesis
+			exported := keeper1.ExportGenesis(ctx1)
+
+			// Setup second keeper
+			suite2 := setupKeeperTestSuite(t)
+			ctx2 := suite2.ctx
+			keeper2 := suite2.keeper
+
+			// Import exported genesis
+			keeper2.InitGenesis(ctx2, *exported)
+
+			// Export again and compare
+			reExported := keeper2.ExportGenesis(ctx2)
+
+			// Compare params
+			require.Equal(t, exported.Params, reExported.Params)
+			require.Equal(t, exported.LastTokenizationRecordId, reExported.LastTokenizationRecordId)
+			require.Len(t, reExported.TokenizationRecords, len(exported.TokenizationRecords))
+
+			// Compare records (might be in different order)
+			exportedMap := make(map[uint64]types.TokenizationRecord)
+			for _, record := range exported.TokenizationRecords {
+				exportedMap[record.Id] = record
+			}
+
+			for _, record := range reExported.TokenizationRecords {
+				expectedRecord, found := exportedMap[record.Id]
+				require.True(t, found)
+				require.Equal(t, expectedRecord, record)
+			}
+		})
+	}
+}

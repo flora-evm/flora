@@ -16,8 +16,9 @@ type MockStakingKeeper struct {
 	UnbondFn             func(ctx context.Context, delAddr sdk.AccAddress, valAddr sdk.ValAddress, shares math.LegacyDec) (math.Int, error)
 	GetParamsFn          func(ctx context.Context) (stakingtypes.Params, error)
 	BondDenomFn          func(ctx context.Context) (string, error)
-	TotalBondedTokensFn  func(ctx context.Context) math.Int
+	TotalBondedTokensFn  func(ctx context.Context) (math.Int, error)
 	DelegateFn           func(ctx context.Context, delAddr sdk.AccAddress, bondAmt math.Int, tokenSrc stakingtypes.BondStatus, validator stakingtypes.Validator, subtractAccount bool) (math.LegacyDec, error)
+	IterateValidatorsFn  func(ctx context.Context, fn func(index int64, validator stakingtypes.ValidatorI) (stop bool))
 }
 
 func (m *MockStakingKeeper) GetDelegation(ctx context.Context, delAddr sdk.AccAddress, valAddr sdk.ValAddress) (stakingtypes.Delegation, error) {
@@ -55,11 +56,11 @@ func (m *MockStakingKeeper) BondDenom(ctx context.Context) (string, error) {
 	return "stake", nil
 }
 
-func (m *MockStakingKeeper) TotalBondedTokens(ctx context.Context) math.Int {
+func (m *MockStakingKeeper) TotalBondedTokens(ctx context.Context) (math.Int, error) {
 	if m.TotalBondedTokensFn != nil {
 		return m.TotalBondedTokensFn(ctx)
 	}
-	return math.NewInt(1000000)
+	return math.NewInt(1000000), nil
 }
 
 func (m *MockStakingKeeper) Delegate(ctx context.Context, delAddr sdk.AccAddress, bondAmt math.Int, tokenSrc stakingtypes.BondStatus, validator stakingtypes.Validator, subtractAccount bool) (math.LegacyDec, error) {
@@ -68,6 +69,12 @@ func (m *MockStakingKeeper) Delegate(ctx context.Context, delAddr sdk.AccAddress
 	}
 	// Default implementation: return shares equal to tokens (1:1 ratio)
 	return math.LegacyNewDecFromInt(bondAmt), nil
+}
+
+func (m *MockStakingKeeper) IterateValidators(ctx context.Context, fn func(index int64, validator stakingtypes.ValidatorI) (stop bool)) {
+	if m.IterateValidatorsFn != nil {
+		m.IterateValidatorsFn(ctx, fn)
+	}
 }
 
 // MockBankKeeper is a mock implementation of the BankKeeper interface
@@ -80,6 +87,7 @@ type MockBankKeeper struct {
 	GetBalanceFn                     func(ctx context.Context, addr sdk.AccAddress, denom string) sdk.Coin
 	SendCoinsFromAccountToModuleFn   func(ctx context.Context, senderAddr sdk.AccAddress, recipientModule string, amt sdk.Coins) error
 	BurnCoinsFn                      func(ctx context.Context, moduleName string, amt sdk.Coins) error
+	SendCoinsFn                      func(ctx context.Context, fromAddr sdk.AccAddress, toAddr sdk.AccAddress, amt sdk.Coins) error
 }
 
 func (m *MockBankKeeper) MintCoins(ctx context.Context, moduleName string, amt sdk.Coins) error {
@@ -137,6 +145,13 @@ func (m *MockBankKeeper) BurnCoins(ctx context.Context, moduleName string, amt s
 	return nil
 }
 
+func (m *MockBankKeeper) SendCoins(ctx context.Context, fromAddr sdk.AccAddress, toAddr sdk.AccAddress, amt sdk.Coins) error {
+	if m.SendCoinsFn != nil {
+		return m.SendCoinsFn(ctx, fromAddr, toAddr, amt)
+	}
+	return nil
+}
+
 // MockAccountKeeper is a mock implementation of the AccountKeeper interface
 type MockAccountKeeper struct {
 	GetAccountFn       func(ctx context.Context, addr sdk.AccAddress) sdk.AccountI
@@ -155,4 +170,20 @@ func (m *MockAccountKeeper) GetModuleAddress(moduleName string) sdk.AccAddress {
 		return m.GetModuleAddressFn(moduleName)
 	}
 	return sdk.AccAddress([]byte(moduleName))
+}
+
+// MockTokenFactoryKeeper is no longer needed - using Bank module directly
+// The liquid staking module uses the Bank module for minting and burning LSTs
+// instead of the Token Factory module
+
+// MockDistributionKeeper is a mock implementation of the DistributionKeeper interface
+type MockDistributionKeeper struct {
+	GetValidatorAccumulatedRewardsFn func(ctx context.Context, val sdk.ValAddress) (sdk.DecCoins, error)
+}
+
+func (m *MockDistributionKeeper) GetValidatorAccumulatedRewards(ctx context.Context, val sdk.ValAddress) (sdk.DecCoins, error) {
+	if m.GetValidatorAccumulatedRewardsFn != nil {
+		return m.GetValidatorAccumulatedRewardsFn(ctx, val)
+	}
+	return sdk.DecCoins{}, nil
 }

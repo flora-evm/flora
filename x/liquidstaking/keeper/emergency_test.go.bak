@@ -1,0 +1,279 @@
+package keeper_test
+
+import (
+	"testing"
+	"time"
+
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/stretchr/testify/suite"
+
+	"github.com/rollchains/flora/x/liquidstaking/types"
+)
+
+type EmergencyTestSuite struct {
+	KeeperTestSuite
+}
+
+func TestEmergencyTestSuite(t *testing.T) {
+	suite.Run(t, new(EmergencyTestSuite))
+}
+
+func (suite *EmergencyTestSuite) TestEmergencyPause() {
+	ctx := suite.ctx
+	k := suite.keeper
+
+	// Get module authority
+	authority := k.GetAuthority()
+
+	// Test unauthorized pause
+	err := k.EmergencyPause(ctx, "unauthorized", "test", 0)
+	suite.Require().Error(err)
+	suite.Contains(err.Error(), "unauthorized")
+
+	// Test authorized pause without duration
+	err = k.EmergencyPause(ctx, authority, "security issue", 0)
+	suite.Require().NoError(err)
+
+	// Verify module is paused
+	suite.True(k.IsModulePaused(ctx))
+	params := k.GetParams(ctx)
+	suite.False(params.Enabled)
+
+	// Verify pause info
+	pauseInfo, found := k.GetEmergencyPauseInfo(ctx)
+	suite.True(found)
+	suite.True(pauseInfo.Paused)
+	suite.Equal(authority, pauseInfo.Authority)
+	suite.Equal(ctx.BlockTime(), pauseInfo.PausedAt)
+	suite.True(pauseInfo.UnpauseAt.IsZero())
+
+	// Test unpause
+	err = k.EmergencyUnpause(ctx, authority)
+	suite.Require().NoError(err)
+
+	// Verify module is unpaused
+	suite.False(k.IsModulePaused(ctx))
+	params = k.GetParams(ctx)
+	suite.True(params.Enabled)
+
+	// Verify pause info is cleared
+	_, found = k.GetEmergencyPauseInfo(ctx)
+	suite.False(found)
+}
+
+func (suite *EmergencyTestSuite) TestEmergencyPauseWithDuration() {
+	ctx := suite.ctx
+	k := suite.keeper
+
+	authority := k.GetAuthority()
+
+	// Pause for 1 hour
+	duration := int64(3600)
+	err := k.EmergencyPause(ctx, authority, "maintenance", duration)
+	suite.Require().NoError(err)
+
+	// Verify pause info includes unpause time
+	pauseInfo, found := k.GetEmergencyPauseInfo(ctx)
+	suite.True(found)
+	suite.True(pauseInfo.Paused)
+	expectedUnpause := ctx.BlockTime().Add(time.Duration(duration) * time.Second)
+	suite.Equal(expectedUnpause, pauseInfo.UnpauseAt)
+
+	// Test automatic unpause before time
+	k.CheckEmergencyPause(ctx)
+	suite.True(k.IsModulePaused(ctx)) // Should still be paused
+
+	// Move time forward past unpause time
+	ctx = ctx.WithBlockTime(expectedUnpause.Add(1 * time.Second))
+	k.CheckEmergencyPause(ctx)
+
+	// Verify automatically unpaused
+	suite.False(k.IsModulePaused(ctx))
+	_, found = k.GetEmergencyPauseInfo(ctx)
+	suite.False(found)
+}
+
+func (suite *EmergencyTestSuite) TestRequireNotPaused() {
+	ctx := suite.ctx
+	k := suite.keeper
+
+	// Test when not paused
+	err := k.RequireNotPaused(ctx)
+	suite.Require().NoError(err)
+
+	// Pause the module
+	authority := k.GetAuthority()
+	err = k.EmergencyPause(ctx, authority, "test", 0)
+	suite.Require().NoError(err)
+
+	// Test when paused
+	err = k.RequireNotPaused(ctx)
+	suite.Require().Error(err)
+	suite.Contains(err.Error(), "liquid staking module is currently paused")
+}
+
+func (suite *EmergencyTestSuite) TestValidatorWhitelist() {
+	ctx := suite.ctx
+	k := suite.keeper
+
+	// Create validator addresses
+	val1 := sdk.ValAddress([]byte("validator1"))
+	val2 := sdk.ValAddress([]byte("validator2"))
+	val3 := sdk.ValAddress([]byte("validator3"))
+
+	// Initially, whitelist should be empty (all validators allowed)
+	whitelist := k.GetValidatorWhitelist(ctx)
+	suite.Empty(whitelist)
+	suite.True(k.IsValidatorWhitelisted(ctx, val1.String()))
+	suite.True(k.IsValidatorWhitelisted(ctx, val2.String()))
+
+	// Set whitelist
+	err := k.SetValidatorWhitelist(ctx, []string{val1.String(), val2.String()})
+	suite.Require().NoError(err)
+
+	// Verify whitelist
+	whitelist = k.GetValidatorWhitelist(ctx)
+	suite.Len(whitelist, 2)
+	suite.Contains(whitelist, val1.String())
+	suite.Contains(whitelist, val2.String())
+
+	// Check whitelist status
+	suite.True(k.IsValidatorWhitelisted(ctx, val1.String()))
+	suite.True(k.IsValidatorWhitelisted(ctx, val2.String()))
+	suite.False(k.IsValidatorWhitelisted(ctx, val3.String()))
+
+	// Test invalid validator address
+	err = k.SetValidatorWhitelist(ctx, []string{"invalid_address"})
+	suite.Require().Error(err)
+
+	// Clear whitelist
+	err = k.SetValidatorWhitelist(ctx, []string{})
+	suite.Require().NoError(err)
+	whitelist = k.GetValidatorWhitelist(ctx)
+	suite.Empty(whitelist)
+
+	// All validators should be allowed again
+	suite.True(k.IsValidatorWhitelisted(ctx, val1.String()))
+	suite.True(k.IsValidatorWhitelisted(ctx, val3.String()))
+}
+
+func (suite *EmergencyTestSuite) TestValidatorBlacklist() {
+	ctx := suite.ctx
+	k := suite.keeper
+
+	// Create validator addresses
+	val1 := sdk.ValAddress([]byte("validator1"))
+	val2 := sdk.ValAddress([]byte("validator2"))
+	val3 := sdk.ValAddress([]byte("validator3"))
+
+	// Initially, blacklist should be empty
+	blacklist := k.GetValidatorBlacklist(ctx)
+	suite.Empty(blacklist)
+	suite.False(k.IsValidatorBlacklisted(ctx, val1.String()))
+
+	// Set blacklist
+	err := k.SetValidatorBlacklist(ctx, []string{val2.String(), val3.String()})
+	suite.Require().NoError(err)
+
+	// Verify blacklist
+	blacklist = k.GetValidatorBlacklist(ctx)
+	suite.Len(blacklist, 2)
+	suite.Contains(blacklist, val2.String())
+	suite.Contains(blacklist, val3.String())
+
+	// Check blacklist status
+	suite.False(k.IsValidatorBlacklisted(ctx, val1.String()))
+	suite.True(k.IsValidatorBlacklisted(ctx, val2.String()))
+	suite.True(k.IsValidatorBlacklisted(ctx, val3.String()))
+
+	// Test invalid validator address
+	err = k.SetValidatorBlacklist(ctx, []string{"invalid_address"})
+	suite.Require().Error(err)
+
+	// Clear blacklist
+	err = k.SetValidatorBlacklist(ctx, []string{})
+	suite.Require().NoError(err)
+	blacklist = k.GetValidatorBlacklist(ctx)
+	suite.Empty(blacklist)
+
+	// No validators should be blacklisted
+	suite.False(k.IsValidatorBlacklisted(ctx, val2.String()))
+}
+
+func (suite *EmergencyTestSuite) TestIsValidatorAllowed() {
+	ctx := suite.ctx
+	k := suite.keeper
+
+	// Create validator addresses
+	val1 := sdk.ValAddress([]byte("validator1"))
+	val2 := sdk.ValAddress([]byte("validator2"))
+	val3 := sdk.ValAddress([]byte("validator3"))
+	val4 := sdk.ValAddress([]byte("validator4"))
+
+	// Initially all validators are allowed
+	suite.True(k.IsValidatorAllowed(ctx, val1.String()))
+	suite.True(k.IsValidatorAllowed(ctx, val2.String()))
+	suite.True(k.IsValidatorAllowed(ctx, val3.String()))
+	suite.True(k.IsValidatorAllowed(ctx, val4.String()))
+
+	// Set whitelist (only val1 and val2)
+	err := k.SetValidatorWhitelist(ctx, []string{val1.String(), val2.String()})
+	suite.Require().NoError(err)
+
+	// Only whitelisted validators are allowed
+	suite.True(k.IsValidatorAllowed(ctx, val1.String()))
+	suite.True(k.IsValidatorAllowed(ctx, val2.String()))
+	suite.False(k.IsValidatorAllowed(ctx, val3.String()))
+	suite.False(k.IsValidatorAllowed(ctx, val4.String()))
+
+	// Add val2 to blacklist (blacklist takes precedence)
+	err = k.SetValidatorBlacklist(ctx, []string{val2.String()})
+	suite.Require().NoError(err)
+
+	// val2 is now not allowed despite being whitelisted
+	suite.True(k.IsValidatorAllowed(ctx, val1.String()))
+	suite.False(k.IsValidatorAllowed(ctx, val2.String())) // Blacklisted
+	suite.False(k.IsValidatorAllowed(ctx, val3.String())) // Not whitelisted
+	suite.False(k.IsValidatorAllowed(ctx, val4.String())) // Not whitelisted
+
+	// Clear whitelist (now only blacklist matters)
+	err = k.SetValidatorWhitelist(ctx, []string{})
+	suite.Require().NoError(err)
+
+	// All validators allowed except blacklisted ones
+	suite.True(k.IsValidatorAllowed(ctx, val1.String()))
+	suite.False(k.IsValidatorAllowed(ctx, val2.String())) // Still blacklisted
+	suite.True(k.IsValidatorAllowed(ctx, val3.String()))
+	suite.True(k.IsValidatorAllowed(ctx, val4.String()))
+}
+
+func (suite *EmergencyTestSuite) TestPersistenceAcrossBlocks() {
+	ctx := suite.ctx
+	k := suite.keeper
+
+	// Set whitelist and blacklist
+	val1 := sdk.ValAddress([]byte("validator1"))
+	val2 := sdk.ValAddress([]byte("validator2"))
+
+	err := k.SetValidatorWhitelist(ctx, []string{val1.String()})
+	suite.Require().NoError(err)
+	err = k.SetValidatorBlacklist(ctx, []string{val2.String()})
+	suite.Require().NoError(err)
+
+	// Pause the module
+	authority := k.GetAuthority()
+	err = k.EmergencyPause(ctx, authority, "test", 3600)
+	suite.Require().NoError(err)
+
+	// Simulate new block
+	ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1)
+
+	// Verify everything persists
+	suite.True(k.IsModulePaused(ctx))
+	suite.True(k.IsValidatorWhitelisted(ctx, val1.String()))
+	suite.True(k.IsValidatorBlacklisted(ctx, val2.String()))
+
+	pauseInfo, found := k.GetEmergencyPauseInfo(ctx)
+	suite.True(found)
+	suite.True(pauseInfo.Paused)
+}

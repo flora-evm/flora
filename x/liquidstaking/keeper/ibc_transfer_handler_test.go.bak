@@ -1,0 +1,389 @@
+package keeper_test
+
+import (
+	"encoding/json"
+	"fmt"
+	"testing"
+	"time"
+
+	"cosmossdk.io/math"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/mock"
+	
+	transfertypes "github.com/cosmos/ibc-go/v8/modules/apps/transfer/types"
+	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
+	channeltypes "github.com/cosmos/ibc-go/v8/modules/core/04-channel/types"
+	ibcexported "github.com/cosmos/ibc-go/v8/modules/core/exported"
+
+	"github.com/rollchains/flora/x/liquidstaking/keeper"
+	"github.com/rollchains/flora/x/liquidstaking/types"
+)
+
+// Mock keepers for testing
+type MockTransferKeeper struct {
+	mock.Mock
+}
+
+func (m *MockTransferKeeper) SendTransfer(
+	ctx sdk.Context,
+	sourcePort,
+	sourceChannel string,
+	token sdk.Coin,
+	sender sdk.AccAddress,
+	receiver string,
+	timeoutHeight clienttypes.Height,
+	timeoutTimestamp uint64,
+	memo string,
+) (uint64, error) {
+	args := m.Called(ctx, sourcePort, sourceChannel, token, sender, receiver, timeoutHeight, timeoutTimestamp, memo)
+	return args.Get(0).(uint64), args.Error(1)
+}
+
+type MockChannelKeeper struct {
+	mock.Mock
+}
+
+func (m *MockChannelKeeper) GetChannel(ctx sdk.Context, portID, channelID string) (channeltypes.Channel, bool) {
+	args := m.Called(ctx, portID, channelID)
+	return args.Get(0).(channeltypes.Channel), args.Bool(1)
+}
+
+func (m *MockChannelKeeper) GetChannelClientState(ctx sdk.Context, portID, channelID string) (string, ibcexported.ClientState, error) {
+	args := m.Called(ctx, portID, channelID)
+	return args.String(0), args.Get(1).(ibcexported.ClientState), args.Error(2)
+}
+
+func TestSendLiquidStakingToken(t *testing.T) {
+	suite := setupTestSuite(t)
+	
+	mockTransferKeeper := new(MockTransferKeeper)
+	mockChannelKeeper := new(MockChannelKeeper)
+	
+	handler := keeper.NewIBCTransferHandler(suite.keeper, mockTransferKeeper, mockChannelKeeper)
+
+	sender := sdk.AccAddress("sender")
+	receiver := "cosmos1receiver"
+	sourcePort := "transfer"
+	sourceChannel := "channel-0"
+	timeoutHeight := clienttypes.NewHeight(1, 1000)
+	timeoutTimestamp := uint64(time.Now().Add(time.Hour).Unix())
+
+	// Create a tokenization record
+	record := types.TokenizationRecord{
+		Id:               1,
+		ValidatorAddress: "floravaloper1abc",
+		Owner:            sender.String(),
+		SharesDenomination: "shares/floravaloper1abc",
+		LiquidStakingTokenDenom: "liquidstake/floravaloper1abc/1",
+		SharesAmount:     math.LegacyNewDec(1000000),
+		Status:           types.TokenizationRecord_ACTIVE,
+		CreatedAt:        suite.ctx.BlockTime(),
+	}
+	suite.keeper.SetTokenizationRecord(suite.ctx, record)
+
+	// Mint tokens to sender
+	token := sdk.NewCoin("liquidstake/floravaloper1abc/1", math.NewInt(1000))
+	err := suite.bankKeeper.MintCoins(suite.ctx, types.ModuleName, sdk.NewCoins(token))
+	require.NoError(t, err)
+	err = suite.bankKeeper.SendCoinsFromModuleToAccount(suite.ctx, types.ModuleName, sender, sdk.NewCoins(token))
+	require.NoError(t, err)
+
+	// Mock channel as open
+	openChannel := channeltypes.Channel{
+		State: channeltypes.OPEN,
+	}
+	mockChannelKeeper.On("GetChannel", suite.ctx, sourcePort, sourceChannel).Return(openChannel, true)
+
+	// Mock successful transfer
+	mockTransferKeeper.On("SendTransfer", 
+		suite.ctx, 
+		sourcePort, 
+		sourceChannel, 
+		token, 
+		sender, 
+		receiver, 
+		timeoutHeight, 
+		timeoutTimestamp, 
+		mock.Anything,
+	).Return(uint64(1), nil)
+
+	// Test sending liquid staking token
+	err = handler.SendLiquidStakingToken(
+		suite.ctx,
+		sourcePort,
+		sourceChannel,
+		token,
+		sender,
+		receiver,
+		timeoutHeight,
+		timeoutTimestamp,
+		"test memo",
+	)
+	require.NoError(t, err)
+
+	// Verify mocks were called
+	mockTransferKeeper.AssertExpectations(t)
+	mockChannelKeeper.AssertExpectations(t)
+	
+	// Check events
+	events := suite.ctx.EventManager().Events()
+	found := false
+	for _, event := range events {
+		if event.Type == types.EventTypeLiquidStakingIBCTransfer {
+			found = true
+			break
+		}
+	}
+	require.True(t, found, "liquid staking IBC transfer event not found")
+}
+
+func TestSendLiquidStakingToken_Validations(t *testing.T) {
+	suite := setupTestSuite(t)
+	
+	mockTransferKeeper := new(MockTransferKeeper)
+	mockChannelKeeper := new(MockChannelKeeper)
+	
+	handler := keeper.NewIBCTransferHandler(suite.keeper, mockTransferKeeper, mockChannelKeeper)
+
+	sender := sdk.AccAddress("sender")
+	receiver := "cosmos1receiver"
+	sourcePort := "transfer"
+	sourceChannel := "channel-0"
+	timeoutHeight := clienttypes.NewHeight(1, 1000)
+	timeoutTimestamp := uint64(time.Now().Add(time.Hour).Unix())
+
+	testCases := []struct {
+		name      string
+		setup     func()
+		token     sdk.Coin
+		expectErr bool
+		errMsg    string
+	}{
+		{
+			name: "module disabled",
+			setup: func() {
+				params := suite.keeper.GetParams(suite.ctx)
+				params.Enabled = false
+				suite.keeper.SetParams(suite.ctx, params)
+			},
+			token:     sdk.NewCoin("liquidstake/floravaloper1abc/1", math.NewInt(1000)),
+			expectErr: true,
+			errMsg:    "liquid staking is disabled",
+		},
+		{
+			name: "invalid token amount",
+			setup: func() {
+				params := suite.keeper.GetParams(suite.ctx)
+				params.Enabled = true
+				suite.keeper.SetParams(suite.ctx, params)
+			},
+			token:     sdk.NewCoin("liquidstake/floravaloper1abc/1", math.NewInt(0)),
+			expectErr: true,
+			errMsg:    "invalid token amount",
+		},
+		{
+			name: "insufficient balance",
+			setup: func() {
+				// Don't mint any tokens to sender
+			},
+			token:     sdk.NewCoin("liquidstake/floravaloper1abc/1", math.NewInt(1000)),
+			expectErr: true,
+			errMsg:    "insufficient funds",
+		},
+		{
+			name: "channel not found",
+			setup: func() {
+				mockChannelKeeper.On("GetChannel", suite.ctx, sourcePort, sourceChannel).Return(channeltypes.Channel{}, false).Once()
+			},
+			token:     sdk.NewCoin("flora", math.NewInt(1000)),
+			expectErr: true,
+			errMsg:    "channel not found",
+		},
+		{
+			name: "channel not open",
+			setup: func() {
+				closedChannel := channeltypes.Channel{
+					State: channeltypes.CLOSED,
+				}
+				mockChannelKeeper.On("GetChannel", suite.ctx, sourcePort, sourceChannel).Return(closedChannel, true).Once()
+			},
+			token:     sdk.NewCoin("flora", math.NewInt(1000)),
+			expectErr: true,
+			errMsg:    "channel is not open",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.setup()
+			
+			err := handler.SendLiquidStakingToken(
+				suite.ctx,
+				sourcePort,
+				sourceChannel,
+				tc.token,
+				sender,
+				receiver,
+				timeoutHeight,
+				timeoutTimestamp,
+				"",
+			)
+			
+			if tc.expectErr {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tc.errMsg)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestOnRecvLiquidStakingToken(t *testing.T) {
+	suite := setupTestSuite(t)
+	
+	mockTransferKeeper := new(MockTransferKeeper)
+	mockChannelKeeper := new(MockChannelKeeper)
+	
+	handler := keeper.NewIBCTransferHandler(suite.keeper, mockTransferKeeper, mockChannelKeeper)
+
+	receiver := sdk.AccAddress("receiver")
+	
+	// Create liquid staking metadata
+	metadata := &types.LiquidStakingMetadata{
+		ValidatorAddress: "cosmosvaloper1abc",
+		RecordId:         1,
+		SharesAmount:     math.LegacyNewDec(1000000),
+		SourceChainId:    "cosmos-hub-4",
+		CreatedAt:        time.Now().UTC().Format(time.RFC3339),
+	}
+
+	// Create packet data with metadata in memo
+	memoData := map[string]interface{}{
+		"liquid_staking_metadata": metadata,
+	}
+	memoJSON, _ := json.Marshal(memoData)
+
+	packetData := transfertypes.FungibleTokenPacketData{
+		Denom:    "liquidstake/cosmosvaloper1abc/1",
+		Amount:   "1000000",
+		Sender:   "cosmos1sender",
+		Receiver: receiver.String(),
+		Memo:     string(memoJSON),
+	}
+
+	packet := channeltypes.Packet{
+		Sequence:           1,
+		SourcePort:         "transfer",
+		SourceChannel:      "channel-0",
+		DestinationPort:    "transfer",
+		DestinationChannel: "channel-1",
+		Data:               nil, // Will be set per test
+		TimeoutHeight:      channeltypes.Height{},
+		TimeoutTimestamp:   0,
+	}
+
+	// Test successful receive
+	err := handler.OnRecvLiquidStakingToken(suite.ctx, packet, packetData)
+	require.NoError(t, err)
+
+	// Check that IBC denom was created
+	sourcePrefix := transfertypes.GetDenomPrefix(packet.GetDestPort(), packet.GetDestChannel())
+	prefixedDenom := sourcePrefix + packetData.Denom
+	ibcDenom := transfertypes.ParseDenomTrace(prefixedDenom).IBCDenom()
+
+	// Verify metadata was set
+	denomMetadata, found := suite.bankKeeper.GetDenomMetaData(suite.ctx, ibcDenom)
+	require.True(t, found)
+	require.Contains(t, denomMetadata.Description, "Liquid Staking Token from cosmos-hub-4")
+
+	// Verify tokens were minted
+	balance := suite.bankKeeper.GetBalance(suite.ctx, receiver, ibcDenom)
+	require.Equal(t, math.NewInt(1000000), balance.Amount)
+
+	// Check events
+	events := suite.ctx.EventManager().Events()
+	found = false
+	for _, event := range events {
+		if event.Type == types.EventTypeLiquidStakingIBCReceived {
+			found = true
+			break
+		}
+	}
+	require.True(t, found, "liquid staking IBC received event not found")
+
+	// Test receive without metadata (regular token)
+	regularPacketData := transfertypes.FungibleTokenPacketData{
+		Denom:    "uatom",
+		Amount:   "1000000",
+		Sender:   "cosmos1sender",
+		Receiver: receiver.String(),
+		Memo:     "",
+	}
+
+	err = handler.OnRecvLiquidStakingToken(suite.ctx, packet, regularPacketData)
+	require.NoError(t, err)
+}
+
+func TestGetIBCLiquidStakingMetadata(t *testing.T) {
+	suite := setupTestSuite(t)
+	
+	mockTransferKeeper := new(MockTransferKeeper)
+	mockChannelKeeper := new(MockChannelKeeper)
+	
+	handler := keeper.NewIBCTransferHandler(suite.keeper, mockTransferKeeper, mockChannelKeeper)
+
+	// Create and store metadata
+	metadata := &types.LiquidStakingMetadata{
+		ValidatorAddress: "cosmosvaloper1abc",
+		RecordId:         1,
+		SharesAmount:     math.LegacyNewDec(1000000),
+		SourceChainId:    "cosmos-hub-4",
+		CreatedAt:        time.Now().UTC().Format(time.RFC3339),
+	}
+
+	ibcDenom := "ibc/ABCDEF123456"
+	
+	// Store metadata manually for testing
+	metadataKey := []byte(fmt.Sprintf("ibc_lst_metadata_%s", ibcDenom))
+	metadataBytes, _ := json.Marshal(metadata)
+	store := suite.keeper.storeService.OpenKVStore(suite.ctx)
+	err := store.Set(metadataKey, metadataBytes)
+	require.NoError(t, err)
+
+	// Test retrieval
+	retrievedMetadata, err := handler.GetIBCLiquidStakingMetadata(suite.ctx, ibcDenom)
+	require.NoError(t, err)
+	require.NotNil(t, retrievedMetadata)
+	require.Equal(t, metadata.ValidatorAddress, retrievedMetadata.ValidatorAddress)
+	require.Equal(t, metadata.RecordId, retrievedMetadata.RecordId)
+
+	// Test non-existent metadata
+	_, err = handler.GetIBCLiquidStakingMetadata(suite.ctx, "ibc/NONEXISTENT")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "metadata not found")
+}
+
+func TestIsIBCLiquidStakingToken(t *testing.T) {
+	suite := setupTestSuite(t)
+	
+	mockTransferKeeper := new(MockTransferKeeper)
+	mockChannelKeeper := new(MockChannelKeeper)
+	
+	handler := keeper.NewIBCTransferHandler(suite.keeper, mockTransferKeeper, mockChannelKeeper)
+
+	// Store metadata for a liquid staking IBC token
+	ibcDenom := "ibc/ABCDEF123456"
+	metadataKey := []byte(fmt.Sprintf("ibc_lst_metadata_%s", ibcDenom))
+	store := suite.keeper.storeService.OpenKVStore(suite.ctx)
+	err := store.Set(metadataKey, []byte("metadata"))
+	require.NoError(t, err)
+
+	// Test positive case
+	require.True(t, handler.IsIBCLiquidStakingToken(suite.ctx, ibcDenom))
+
+	// Test negative case
+	require.False(t, handler.IsIBCLiquidStakingToken(suite.ctx, "ibc/NONEXISTENT"))
+	require.False(t, handler.IsIBCLiquidStakingToken(suite.ctx, "uatom"))
+}

@@ -1,0 +1,374 @@
+package keeper
+
+import (
+	"fmt"
+	"strconv"
+	"time"
+
+	"cosmossdk.io/math"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
+	
+	"github.com/rollchains/flora/x/liquidstaking/types"
+)
+
+// ProposalHandler handles governance proposals for the liquid staking module
+type ProposalHandler struct {
+	k Keeper
+}
+
+// NewProposalHandler creates a new governance proposal handler
+func NewProposalHandler(k Keeper) govtypes.Handler {
+	h := ProposalHandler{k: k}
+	
+	return func(ctx sdk.Context, content govtypes.Content) error {
+		switch c := content.(type) {
+		case *types.UpdateParamsProposal:
+			return h.handleUpdateParamsProposal(ctx, c)
+		case *types.EmergencyPauseProposal:
+			return h.handleEmergencyPauseProposal(ctx, c)
+		case *types.UpdateValidatorCapProposal:
+			return h.handleUpdateValidatorCapProposal(ctx, c)
+		default:
+			return fmt.Errorf("unrecognized liquid staking proposal content type: %T", c)
+		}
+	}
+}
+
+// handleUpdateParamsProposal handles parameter update proposals
+func (h ProposalHandler) handleUpdateParamsProposal(ctx sdk.Context, p *types.UpdateParamsProposal) error {
+	// Get current params
+	params := h.k.GetParams(ctx)
+	
+	// Apply each change
+	for _, change := range p.Changes {
+		if err := h.applyParamChange(ctx, &params, change); err != nil {
+			return fmt.Errorf("failed to apply param change %s: %w", change.Key, err)
+		}
+	}
+	
+	// Validate the updated params
+	if err := params.Validate(); err != nil {
+		return fmt.Errorf("invalid params after update: %w", err)
+	}
+	
+	// Set the updated params
+	if err := h.k.SetParams(ctx, params); err != nil {
+		return fmt.Errorf("failed to set params: %w", err)
+	}
+	
+	// Emit event
+	ctx.EventManager().EmitEvent(
+		sdk.NewEvent(
+			types.EventTypeParameterUpdate,
+			sdk.NewAttribute(types.AttributeKeyProposalTitle, p.Title),
+			sdk.NewAttribute(types.AttributeKeyProposalID, fmt.Sprintf("%d", p.GetTitle())), // In real implementation, get from context
+			sdk.NewAttribute(sdk.AttributeKeyAction, "update_params"),
+		),
+	)
+	
+	return nil
+}
+
+// applyParamChange applies a single parameter change
+func (h ProposalHandler) applyParamChange(ctx sdk.Context, params *types.ModuleParams, change types.ParamChange) error {
+	switch change.Key {
+	case "enabled":
+		enabled, err := strconv.ParseBool(change.Value)
+		if err != nil {
+			return fmt.Errorf("invalid bool value: %w", err)
+		}
+		params.Enabled = enabled
+		
+	case "global_liquid_staking_cap":
+		cap, err := math.LegacyNewDecFromStr(change.Value)
+		if err != nil {
+			return fmt.Errorf("invalid decimal value: %w", err)
+		}
+		params.GlobalLiquidStakingCap = cap
+		
+	case "validator_liquid_cap":
+		cap, err := math.LegacyNewDecFromStr(change.Value)
+		if err != nil {
+			return fmt.Errorf("invalid decimal value: %w", err)
+		}
+		params.ValidatorLiquidCap = cap
+		
+	case "min_liquid_stake_amount":
+		amount, err := math.NewIntFromString(change.Value)
+		if err != nil {
+			return fmt.Errorf("invalid int value: %w", err)
+		}
+		params.MinLiquidStakeAmount = amount
+		
+	case "rate_limit_period_hours":
+		hours, err := strconv.ParseUint(change.Value, 10, 32)
+		if err != nil {
+			return fmt.Errorf("invalid uint32 value: %w", err)
+		}
+		params.RateLimitPeriodHours = uint32(hours)
+		
+	case "global_daily_tokenization_percent":
+		percent, err := math.LegacyNewDecFromStr(change.Value)
+		if err != nil {
+			return fmt.Errorf("invalid decimal value: %w", err)
+		}
+		params.GlobalDailyTokenizationPercent = percent
+		
+	case "validator_daily_tokenization_percent":
+		percent, err := math.LegacyNewDecFromStr(change.Value)
+		if err != nil {
+			return fmt.Errorf("invalid decimal value: %w", err)
+		}
+		params.ValidatorDailyTokenizationPercent = percent
+		
+	case "global_daily_tokenization_count":
+		count, err := strconv.ParseUint(change.Value, 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid uint64 value: %w", err)
+		}
+		params.GlobalDailyTokenizationCount = count
+		
+	case "validator_daily_tokenization_count":
+		count, err := strconv.ParseUint(change.Value, 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid uint64 value: %w", err)
+		}
+		params.ValidatorDailyTokenizationCount = count
+		
+	case "user_daily_tokenization_count":
+		count, err := strconv.ParseUint(change.Value, 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid uint64 value: %w", err)
+		}
+		params.UserDailyTokenizationCount = count
+		
+	case "warning_threshold_percent":
+		percent, err := math.LegacyNewDecFromStr(change.Value)
+		if err != nil {
+			return fmt.Errorf("invalid decimal value: %w", err)
+		}
+		params.WarningThresholdPercent = percent
+		
+	case "auto_compound_enabled":
+		enabled, err := strconv.ParseBool(change.Value)
+		if err != nil {
+			return fmt.Errorf("invalid bool value: %w", err)
+		}
+		params.AutoCompoundEnabled = enabled
+		
+	case "auto_compound_frequency_blocks":
+		blocks, err := strconv.ParseInt(change.Value, 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid int64 value: %w", err)
+		}
+		params.AutoCompoundFrequencyBlocks = blocks
+		
+	case "max_rate_change_per_update":
+		rate, err := math.LegacyNewDecFromStr(change.Value)
+		if err != nil {
+			return fmt.Errorf("invalid decimal value: %w", err)
+		}
+		params.MaxRateChangePerUpdate = rate
+		
+	case "min_blocks_between_updates":
+		blocks, err := strconv.ParseInt(change.Value, 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid int64 value: %w", err)
+		}
+		params.MinBlocksBetweenUpdates = blocks
+		
+	default:
+		return fmt.Errorf("unknown parameter: %s", change.Key)
+	}
+	
+	return nil
+}
+
+// handleEmergencyPauseProposal handles emergency pause proposals
+func (h ProposalHandler) handleEmergencyPauseProposal(ctx sdk.Context, p *types.EmergencyPauseProposal) error {
+	// Get current params
+	params := h.k.GetParams(ctx)
+	
+	// Update enabled status
+	params.Enabled = !p.Pause
+	
+	// Set the updated params
+	if err := h.k.SetParams(ctx, params); err != nil {
+		return fmt.Errorf("failed to set params: %w", err)
+	}
+	
+	// If pausing with duration, set up automatic unpause
+	if p.Pause && p.Duration > 0 {
+		// Store pause info for automatic unpause
+		pauseInfo := types.EmergencyPauseInfo{
+			Paused:     true,
+			PausedAt:   ctx.BlockTime(),
+			UnpauseAt:  ctx.BlockTime().Add(time.Duration(p.Duration) * time.Second),
+			Authority:  "governance",
+		}
+		h.k.SetEmergencyPauseInfo(ctx, pauseInfo)
+	} else {
+		// Clear pause info
+		h.k.DeleteEmergencyPauseInfo(ctx)
+	}
+	
+	// Emit event
+	action := "unpause"
+	if p.Pause {
+		action = "pause"
+	}
+	
+	ctx.EventManager().EmitEvent(
+		sdk.NewEvent(
+			types.EventTypeParameterUpdate,
+			sdk.NewAttribute(types.AttributeKeyProposalTitle, p.Title),
+			sdk.NewAttribute(sdk.AttributeKeyAction, fmt.Sprintf("emergency_%s", action)),
+			sdk.NewAttribute("duration", fmt.Sprintf("%d", p.Duration)),
+		),
+	)
+	
+	return nil
+}
+
+// handleUpdateValidatorCapProposal handles validator cap update proposals
+func (h ProposalHandler) handleUpdateValidatorCapProposal(ctx sdk.Context, p *types.UpdateValidatorCapProposal) error {
+	// Parse validator address
+	valAddr, err := sdk.ValAddressFromBech32(p.ValidatorAddress)
+	if err != nil {
+		return fmt.Errorf("invalid validator address: %w", err)
+	}
+	
+	// Parse liquid cap
+	liquidCap, err := math.LegacyNewDecFromStr(p.LiquidCap)
+	if err != nil {
+		return fmt.Errorf("invalid liquid cap: %w", err)
+	}
+	
+	// Validate the cap
+	if liquidCap.IsNegative() {
+		return fmt.Errorf("liquid cap cannot be negative")
+	}
+	if liquidCap.GT(math.LegacyOneDec()) {
+		return fmt.Errorf("liquid cap cannot exceed 100%%")
+	}
+	
+	// Store validator-specific cap
+	h.k.SetValidatorLiquidCap(ctx, valAddr.String(), liquidCap)
+	
+	// Emit event
+	ctx.EventManager().EmitEvent(
+		sdk.NewEvent(
+			types.EventTypeParameterUpdate,
+			sdk.NewAttribute(types.AttributeKeyProposalTitle, p.Title),
+			sdk.NewAttribute(types.AttributeKeyValidator, p.ValidatorAddress),
+			sdk.NewAttribute("liquid_cap", p.LiquidCap),
+			sdk.NewAttribute(sdk.AttributeKeyAction, "update_validator_cap"),
+		),
+	)
+	
+	return nil
+}
+
+// SetValidatorLiquidCap sets a custom liquid cap for a specific validator
+func (k Keeper) SetValidatorLiquidCap(ctx sdk.Context, validator string, cap math.LegacyDec) {
+	store := k.storeService.OpenKVStore(ctx)
+	key := append([]byte("validator_cap:"), []byte(validator)...)
+	
+	bz, err := cap.Marshal()
+	if err != nil {
+		panic(err)
+	}
+	
+	if err := store.Set(key, bz); err != nil {
+		panic(err)
+	}
+}
+
+// GetValidatorLiquidCap gets the custom liquid cap for a specific validator
+func (k Keeper) GetValidatorLiquidCap(ctx sdk.Context, validator string) (math.LegacyDec, bool) {
+	store := k.storeService.OpenKVStore(ctx)
+	key := append([]byte("validator_cap:"), []byte(validator)...)
+	
+	bz, err := store.Get(key)
+	if err != nil {
+		panic(err)
+	}
+	if bz == nil {
+		return math.LegacyDec{}, false
+	}
+	
+	var cap math.LegacyDec
+	if err := cap.Unmarshal(bz); err != nil {
+		panic(err)
+	}
+	
+	return cap, true
+}
+
+// SetEmergencyPauseInfo stores emergency pause information
+func (k Keeper) SetEmergencyPauseInfo(ctx sdk.Context, info types.EmergencyPauseInfo) {
+	store := k.storeService.OpenKVStore(ctx)
+	bz := k.cdc.MustMarshal(&info)
+	
+	if err := store.Set([]byte("emergency_pause_info"), bz); err != nil {
+		panic(err)
+	}
+}
+
+// GetEmergencyPauseInfo retrieves emergency pause information
+func (k Keeper) GetEmergencyPauseInfo(ctx sdk.Context) (types.EmergencyPauseInfo, bool) {
+	store := k.storeService.OpenKVStore(ctx)
+	
+	bz, err := store.Get([]byte("emergency_pause_info"))
+	if err != nil {
+		panic(err)
+	}
+	if bz == nil {
+		return types.EmergencyPauseInfo{}, false
+	}
+	
+	var info types.EmergencyPauseInfo
+	k.cdc.MustUnmarshal(bz, &info)
+	return info, true
+}
+
+// DeleteEmergencyPauseInfo removes emergency pause information
+func (k Keeper) DeleteEmergencyPauseInfo(ctx sdk.Context) {
+	store := k.storeService.OpenKVStore(ctx)
+	
+	if err := store.Delete([]byte("emergency_pause_info")); err != nil {
+		panic(err)
+	}
+}
+
+// CheckEmergencyPause checks if emergency pause should be lifted
+func (k Keeper) CheckEmergencyPause(ctx sdk.Context) {
+	info, found := k.GetEmergencyPauseInfo(ctx)
+	if !found || !info.Paused {
+		return
+	}
+	
+	// Check if it's time to unpause
+	if ctx.BlockTime().After(info.UnpauseAt) && !info.UnpauseAt.IsZero() {
+		// Unpause the module
+		params := k.GetParams(ctx)
+		params.Enabled = true
+		if err := k.SetParams(ctx, params); err != nil {
+			k.Logger(ctx).Error("failed to unpause module", "error", err)
+			return
+		}
+		
+		// Clear pause info
+		k.DeleteEmergencyPauseInfo(ctx)
+		
+		// Emit event
+		ctx.EventManager().EmitEvent(
+			sdk.NewEvent(
+				types.EventTypeParameterUpdate,
+				sdk.NewAttribute(sdk.AttributeKeyAction, "auto_unpause"),
+				sdk.NewAttribute("unpaused_at", ctx.BlockTime().String()),
+			),
+		)
+	}
+}

@@ -1,0 +1,291 @@
+package keeper
+
+import (
+	"fmt"
+
+	"cosmossdk.io/math"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
+	capabilitytypes "github.com/cosmos/ibc-go/modules/capability/types"
+	transfertypes "github.com/cosmos/ibc-go/v8/modules/apps/transfer/types"
+	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
+	channeltypes "github.com/cosmos/ibc-go/v8/modules/core/04-channel/types"
+	porttypes "github.com/cosmos/ibc-go/v8/modules/core/05-port/types"
+	ibcexported "github.com/cosmos/ibc-go/v8/modules/core/exported"
+
+	"github.com/rollchains/flora/x/liquidstaking/types"
+)
+
+var _ porttypes.IBCModule = IBCMiddleware{}
+
+// IBCMiddleware implements the ICS26 interface for liquid staking enabled token transfers.
+type IBCMiddleware struct {
+	app    porttypes.IBCModule
+	keeper Keeper
+}
+
+// NewIBCMiddleware creates a new IBCMiddleware given the keeper and underlying application
+func NewIBCMiddleware(app porttypes.IBCModule, k Keeper) IBCMiddleware {
+	return IBCMiddleware{
+		app:    app,
+		keeper: k,
+	}
+}
+
+// OnChanOpenInit implements the IBCModule interface
+func (im IBCMiddleware) OnChanOpenInit(
+	ctx sdk.Context,
+	order channeltypes.Order,
+	connectionHops []string,
+	portID string,
+	channelID string,
+	chanCap *capabilitytypes.Capability,
+	counterparty channeltypes.Counterparty,
+	version string,
+) (string, error) {
+	// Simply pass through to underlying app
+	return im.app.OnChanOpenInit(ctx, order, connectionHops, portID, channelID, chanCap, counterparty, version)
+}
+
+// OnChanOpenTry implements the IBCModule interface
+func (im IBCMiddleware) OnChanOpenTry(
+	ctx sdk.Context,
+	order channeltypes.Order,
+	connectionHops []string,
+	portID,
+	channelID string,
+	chanCap *capabilitytypes.Capability,
+	counterparty channeltypes.Counterparty,
+	counterpartyVersion string,
+) (string, error) {
+	// Simply pass through to underlying app
+	return im.app.OnChanOpenTry(ctx, order, connectionHops, portID, channelID, chanCap, counterparty, counterpartyVersion)
+}
+
+// OnChanOpenAck implements the IBCModule interface
+func (im IBCMiddleware) OnChanOpenAck(
+	ctx sdk.Context,
+	portID,
+	channelID string,
+	counterpartyChannelID string,
+	counterpartyVersion string,
+) error {
+	// Simply pass through to underlying app
+	return im.app.OnChanOpenAck(ctx, portID, channelID, counterpartyChannelID, counterpartyVersion)
+}
+
+// OnChanOpenConfirm implements the IBCModule interface
+func (im IBCMiddleware) OnChanOpenConfirm(
+	ctx sdk.Context,
+	portID,
+	channelID string,
+) error {
+	// Simply pass through to underlying app
+	return im.app.OnChanOpenConfirm(ctx, portID, channelID)
+}
+
+// OnChanCloseInit implements the IBCModule interface
+func (im IBCMiddleware) OnChanCloseInit(
+	ctx sdk.Context,
+	portID,
+	channelID string,
+) error {
+	// Simply pass through to underlying app
+	return im.app.OnChanCloseInit(ctx, portID, channelID)
+}
+
+// OnChanCloseConfirm implements the IBCModule interface
+func (im IBCMiddleware) OnChanCloseConfirm(
+	ctx sdk.Context,
+	portID,
+	channelID string,
+) error {
+	// Simply pass through to underlying app
+	return im.app.OnChanCloseConfirm(ctx, portID, channelID)
+}
+
+// OnRecvPacket implements the IBCModule interface.
+// It calls the underlying app's OnRecvPacket and then handles liquid staking specific logic.
+func (im IBCMiddleware) OnRecvPacket(
+	ctx sdk.Context,
+	packet channeltypes.Packet,
+	relayer sdk.AccAddress,
+) ibcexported.Acknowledgement {
+	// First call the underlying app
+	ack := im.app.OnRecvPacket(ctx, packet, relayer)
+
+	// If the underlying app returned an error acknowledgement, return it
+	if !ack.Success() {
+		return ack
+	}
+
+	// Parse the packet data
+	var data transfertypes.FungibleTokenPacketData
+	if err := transfertypes.ModuleCdc.UnmarshalJSON(packet.GetData(), &data); err != nil {
+		// This is not a fungible token packet, return the original ack
+		return ack
+	}
+
+	// Create IBC hooks and handle liquid staking token logic
+	hooks := NewIBCHooks(im.keeper)
+	if err := hooks.OnRecvPacket(ctx, packet, ack, relayer); err != nil {
+		// Log the error but don't fail the packet
+		// The token transfer has already succeeded
+		ctx.Logger().Error("liquid staking IBC hook error", "error", err)
+	}
+
+	return ack
+}
+
+// OnAcknowledgementPacket implements the IBCModule interface
+func (im IBCMiddleware) OnAcknowledgementPacket(
+	ctx sdk.Context,
+	packet channeltypes.Packet,
+	acknowledgement []byte,
+	relayer sdk.AccAddress,
+) error {
+	// First call the underlying app
+	if err := im.app.OnAcknowledgementPacket(ctx, packet, acknowledgement, relayer); err != nil {
+		return err
+	}
+
+	// Create IBC hooks and handle liquid staking token logic
+	hooks := NewIBCHooks(im.keeper)
+	if err := hooks.OnAcknowledgementPacket(ctx, packet, acknowledgement, relayer); err != nil {
+		// Log the error but don't fail
+		ctx.Logger().Error("liquid staking IBC hook error", "error", err)
+	}
+
+	return nil
+}
+
+// OnTimeoutPacket implements the IBCModule interface
+func (im IBCMiddleware) OnTimeoutPacket(
+	ctx sdk.Context,
+	packet channeltypes.Packet,
+	relayer sdk.AccAddress,
+) error {
+	// First call the underlying app
+	if err := im.app.OnTimeoutPacket(ctx, packet, relayer); err != nil {
+		return err
+	}
+
+	// Create IBC hooks and handle liquid staking token logic
+	hooks := NewIBCHooks(im.keeper)
+	if err := hooks.OnTimeoutPacket(ctx, packet, relayer); err != nil {
+		// Log the error but don't fail
+		ctx.Logger().Error("liquid staking IBC hook error", "error", err)
+	}
+
+	return nil
+}
+
+// SendPacket implements the ICS4 Wrapper interface
+// This is called before a packet is sent
+func (im IBCMiddleware) SendPacket(
+	ctx sdk.Context,
+	chanCap *capabilitytypes.Capability,
+	sourcePort string,
+	sourceChannel string,
+	timeoutHeight clienttypes.Height,
+	timeoutTimestamp uint64,
+	data []byte,
+) (uint64, error) {
+	// Parse the packet data to check if it's a liquid staking token
+	var transferData transfertypes.FungibleTokenPacketData
+	if err := transfertypes.ModuleCdc.UnmarshalJSON(data, &transferData); err != nil {
+		// Not a fungible token packet, just pass through
+		// This should not happen in the transfer module stack
+		return 0, sdkerrors.ErrInvalidRequest.Wrap("invalid packet data")
+	}
+
+	// Create IBC hooks for pre-send validation
+	hooks := NewIBCHooks(im.keeper)
+	
+	// Parse amount
+	amount, ok := math.NewIntFromString(transferData.Amount)
+	if !ok {
+		return 0, fmt.Errorf("invalid amount: %s", transferData.Amount)
+	}
+
+	// Parse sender
+	sender, err := sdk.AccAddressFromBech32(transferData.Sender)
+	if err != nil {
+		return 0, err
+	}
+
+	// Create coin for validation
+	coin := sdk.NewCoin(transferData.Denom, amount)
+
+	// Call the hook for send packet
+	// Note: We don't have relayer address at this point, pass nil
+	if err := hooks.OnSendPacket(ctx, sourcePort, sourceChannel, coin, sender, transferData.Receiver, transferData.Memo, nil); err != nil {
+		return 0, err
+	}
+
+	// If this is a liquid staking token, enhance the packet data with metadata
+	if types.IsLiquidStakingTokenDenom(transferData.Denom) {
+		handler := NewIBCTransferHandler(im.keeper, im.keeper.transferKeeper, im.keeper.channelKeeper)
+		lstPacketData, err := handler.enhancePacketData(ctx, transferData)
+		if err != nil {
+			return 0, err
+		}
+		
+		// Re-encode the enhanced packet data
+		data = lstPacketData.GetBytes()
+	}
+
+	// Now actually send the packet through the channel keeper
+	// Note: In the actual IBC transfer module, this would be handled by the transfer keeper
+	// But since we're in middleware, we need to let the underlying app handle it
+	return 0, fmt.Errorf("SendPacket should not be called on middleware")
+}
+
+// WriteAcknowledgement implements the ICS4 Wrapper interface
+func (im IBCMiddleware) WriteAcknowledgement(
+	ctx sdk.Context,
+	chanCap *capabilitytypes.Capability,
+	packet ibcexported.PacketI,
+	ack ibcexported.Acknowledgement,
+) error {
+	// Middleware doesn't write acknowledgements directly
+	return fmt.Errorf("WriteAcknowledgement should not be called on middleware")
+}
+
+// GetAppVersion returns the application version of the underlying app
+func (im IBCMiddleware) GetAppVersion(ctx sdk.Context, portID, channelID string) (string, bool) {
+	// For transfer module, version is typically "ics20-1"
+	return transfertypes.Version, true
+}
+
+// enhancePacketData adds liquid staking metadata to the packet
+func (h *IBCTransferHandler) enhancePacketData(ctx sdk.Context, data transfertypes.FungibleTokenPacketData) (types.LiquidStakingTokenPacketData, error) {
+	// Extract metadata if this is a liquid staking token
+	var metadata *types.LiquidStakingMetadata
+	if types.IsLiquidStakingTokenDenom(data.Denom) {
+		_, recordId, err := types.ParseLiquidStakingTokenDenom(data.Denom)
+		if err != nil {
+			return types.LiquidStakingTokenPacketData{}, fmt.Errorf("failed to parse liquid staking token denom: %w", err)
+		}
+
+		record, found := h.keeper.GetTokenizationRecord(ctx, recordId)
+		if !found {
+			return types.LiquidStakingTokenPacketData{}, fmt.Errorf("tokenization record not found: %d", recordId)
+		}
+
+		metadata = types.ExtractLiquidStakingMetadata(data.Denom, record)
+		if metadata != nil {
+			metadata.SourceChainId = ctx.ChainID()
+		}
+	}
+
+	// Create enhanced packet data
+	return types.NewLiquidStakingTokenPacketData(
+		data.Denom,
+		data.Amount,
+		data.Sender,
+		data.Receiver,
+		data.Memo,
+		metadata,
+	), nil
+}

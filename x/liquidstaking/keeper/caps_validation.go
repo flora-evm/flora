@@ -17,7 +17,10 @@ func (k Keeper) CanTokenizeShares(ctx sdk.Context, validatorAddr string, tokensT
 	}
 	
 	// Get total bonded tokens
-	totalBonded := k.stakingKeeper.TotalBondedTokens(ctx)
+	totalBonded, err := k.stakingKeeper.TotalBondedTokens(ctx)
+	if err != nil {
+		return err
+	}
 	if totalBonded.IsZero() {
 		return nil // No cap check needed if nothing is bonded
 	}

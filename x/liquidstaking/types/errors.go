@@ -6,8 +6,8 @@ import (
 
 // x/liquidstaking module sentinel errors
 var (
-	// ErrModuleDisabled is returned when attempting operations while the module is disabled
-	ErrModuleDisabled          = errorsmod.Register(ModuleName, 2, "liquid staking module is disabled in params")
+	// ErrDisabled is returned when attempting operations while the module is disabled
+	ErrDisabled                = errorsmod.Register(ModuleName, 2, "liquid staking module is disabled")
 	
 	// ErrInvalidTokenizationRecord is returned when a tokenization record fails validation
 	ErrInvalidTokenizationRecord = errorsmod.Register(ModuleName, 3, "invalid tokenization record")
@@ -24,11 +24,11 @@ var (
 	// ErrInvalidDelegator is returned when delegator address is invalid
 	ErrInvalidDelegator        = errorsmod.Register(ModuleName, 7, "invalid delegator address")
 	
-	// ErrExceedsGlobalCap is returned when tokenization would exceed the global liquid staking cap
-	ErrExceedsGlobalCap        = errorsmod.Register(ModuleName, 8, "tokenization would exceed global liquid staking cap")
+	// ErrGlobalCapExceeded is returned when tokenization would exceed the global liquid staking cap
+	ErrGlobalCapExceeded       = errorsmod.Register(ModuleName, 8, "tokenization would exceed global liquid staking cap")
 	
-	// ErrExceedsValidatorCap is returned when tokenization would exceed the validator's liquid staking cap
-	ErrExceedsValidatorCap     = errorsmod.Register(ModuleName, 9, "tokenization would exceed validator liquid staking cap")
+	// ErrValidatorCapExceeded is returned when tokenization would exceed the validator's liquid staking cap
+	ErrValidatorCapExceeded    = errorsmod.Register(ModuleName, 9, "tokenization would exceed validator liquid staking cap")
 	
 	// ErrTokenizationRecordAlreadyExists is returned when attempting to create a duplicate record
 	ErrTokenizationRecordAlreadyExists = errorsmod.Register(ModuleName, 10, "tokenization record already exists")
@@ -41,4 +41,18 @@ var (
 	
 	// ErrDelegationNotFound is returned when delegation doesn't exist for the delegator/validator pair
 	ErrDelegationNotFound      = errorsmod.Register(ModuleName, 13, "delegation not found for given delegator and validator")
+	
+	// ErrAmountTooSmall is returned when tokenization amount is below the minimum requirement
+	ErrAmountTooSmall          = errorsmod.Register(ModuleName, 14, "tokenization amount is below minimum requirement")
+	
+	// ErrRateLimitExceeded is returned when tokenization would exceed rate limits
+	ErrRateLimitExceeded       = errorsmod.Register(ModuleName, 15, "tokenization rate limit exceeded")
+	
+	// ErrInvalidActivity is returned when activity data is corrupted
+	ErrInvalidActivity         = errorsmod.Register(ModuleName, 16, "invalid activity data")
+	
+	// Aliases for compatibility
+	ErrModuleDisabled          = ErrDisabled
+	ErrExceedsGlobalCap        = ErrGlobalCapExceeded
+	ErrExceedsValidatorCap     = ErrValidatorCapExceeded
 )

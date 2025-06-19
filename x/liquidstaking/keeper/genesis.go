@@ -2,7 +2,9 @@ package keeper
 
 import (
 	"fmt"
+	"time"
 	
+	"cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	
 	"github.com/rollchains/flora/x/liquidstaking/types"
@@ -18,18 +20,52 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState types.GenesisState) {
 	// Set last tokenization record ID
 	k.SetLastTokenizationRecordID(ctx, genState.LastTokenizationRecordId)
 	
-	// Set tokenization records
+	// Set tokenization records with proper indexes
 	for _, record := range genState.TokenizationRecords {
-		k.SetTokenizationRecord(ctx, record)
+		// Use SetTokenizationRecordWithIndexes to ensure all indexes are created
+		k.SetTokenizationRecordWithIndexes(ctx, record)
+		
+		// Set the denom index which is normally set during minting
+		if record.Denom != "" {
+			k.setTokenizationRecordDenomIndex(ctx, record.Denom, record.Id)
+		}
+	}
+	
+	// Initialize liquid staking counters from records
+	k.initializeLiquidStakingCounters(ctx, genState.TokenizationRecords)
+	
+	// Import exchange rates
+	for _, rate := range genState.ExchangeRates {
+		k.SetExchangeRate(ctx, rate.ValidatorAddress, rate.Rate, time.Unix(rate.LastUpdated, 0))
+	}
+	
+	// Import global exchange rate if present
+	if genState.GlobalExchangeRate != nil {
+		k.SetGlobalExchangeRate(ctx, *genState.GlobalExchangeRate)
 	}
 }
 
 // ExportGenesis returns the liquid staking module's exported genesis state
 func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
+	// Collect all exchange rates
+	var exchangeRates []types.ExchangeRate
+	k.IterateExchangeRates(ctx, func(rate types.ExchangeRate) bool {
+		exchangeRates = append(exchangeRates, rate)
+		return false
+	})
+	
+	// Get global exchange rate if it exists
+	var globalExchangeRate *types.GlobalExchangeRate
+	if globalRate, found := k.GetGlobalExchangeRate(ctx); found {
+		globalExchangeRate = &globalRate
+	}
+	
 	return &types.GenesisState{
 		Params:                   k.GetParams(ctx),
 		TokenizationRecords:      k.GetAllTokenizationRecords(ctx),
 		LastTokenizationRecordId: k.GetLastTokenizationRecordID(ctx),
+		ExchangeRates:           exchangeRates,
+		GlobalExchangeRate:      globalExchangeRate,
 	}
 }
 
@@ -111,4 +147,44 @@ func (k Keeper) GetAllTokenizationRecords(ctx sdk.Context) []types.TokenizationR
 	}
 	
 	return records
+}
+
+// initializeLiquidStakingCounters initializes the liquid staking counters from tokenization records
+func (k Keeper) initializeLiquidStakingCounters(ctx sdk.Context, records []types.TokenizationRecord) {
+	// Reset counters
+	totalLiquidStaked := math.ZeroInt()
+	validatorLiquidStaked := make(map[string]math.Int)
+	validatorsWithLST := make(map[string]bool)
+	
+	// Calculate totals from records
+	for _, record := range records {
+		totalLiquidStaked = totalLiquidStaked.Add(record.SharesTokenized)
+		
+		if current, exists := validatorLiquidStaked[record.Validator]; exists {
+			validatorLiquidStaked[record.Validator] = current.Add(record.SharesTokenized)
+		} else {
+			validatorLiquidStaked[record.Validator] = record.SharesTokenized
+		}
+		
+		// Track validators with LST tokens
+		validatorsWithLST[record.Validator] = true
+	}
+	
+	// Set total liquid staked
+	k.SetTotalLiquidStaked(ctx, totalLiquidStaked)
+	
+	// Set per-validator liquid staked amounts and ensure exchange rates
+	for validator, amount := range validatorLiquidStaked {
+		k.SetValidatorLiquidStaked(ctx, validator, amount)
+		
+		// Ensure exchange rate is initialized for validators with LST tokens
+		if _, found := k.GetExchangeRate(ctx, validator); !found {
+			// Initialize to 1:1 if not set
+			k.SetExchangeRate(ctx, validator, math.LegacyOneDec(), ctx.BlockTime())
+			k.Logger(ctx).Info("initialized exchange rate for validator with LST tokens",
+				"validator", validator,
+				"rate", math.LegacyOneDec().String(),
+			)
+		}
+	}
 }

@@ -19,8 +19,10 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	Msg_TokenizeShares_FullMethodName = "/flora.liquidstaking.v1.Msg/TokenizeShares"
-	Msg_RedeemTokens_FullMethodName   = "/flora.liquidstaking.v1.Msg/RedeemTokens"
+	Msg_TokenizeShares_FullMethodName      = "/flora.liquidstaking.v1.Msg/TokenizeShares"
+	Msg_RedeemTokens_FullMethodName        = "/flora.liquidstaking.v1.Msg/RedeemTokens"
+	Msg_UpdateParams_FullMethodName        = "/flora.liquidstaking.v1.Msg/UpdateParams"
+	Msg_UpdateExchangeRates_FullMethodName = "/flora.liquidstaking.v1.Msg/UpdateExchangeRates"
 )
 
 // MsgClient is the client API for Msg service.
@@ -31,6 +33,10 @@ type MsgClient interface {
 	TokenizeShares(ctx context.Context, in *MsgTokenizeShares, opts ...grpc.CallOption) (*MsgTokenizeSharesResponse, error)
 	// RedeemTokens converts liquid staking tokens back to delegation shares
 	RedeemTokens(ctx context.Context, in *MsgRedeemTokens, opts ...grpc.CallOption) (*MsgRedeemTokensResponse, error)
+	// UpdateParams updates the module parameters via governance
+	UpdateParams(ctx context.Context, in *MsgUpdateParams, opts ...grpc.CallOption) (*MsgUpdateParamsResponse, error)
+	// UpdateExchangeRates manually updates exchange rates for validators
+	UpdateExchangeRates(ctx context.Context, in *MsgUpdateExchangeRates, opts ...grpc.CallOption) (*MsgUpdateExchangeRatesResponse, error)
 }
 
 type msgClient struct {
@@ -59,6 +65,24 @@ func (c *msgClient) RedeemTokens(ctx context.Context, in *MsgRedeemTokens, opts 
 	return out, nil
 }
 
+func (c *msgClient) UpdateParams(ctx context.Context, in *MsgUpdateParams, opts ...grpc.CallOption) (*MsgUpdateParamsResponse, error) {
+	out := new(MsgUpdateParamsResponse)
+	err := c.cc.Invoke(ctx, Msg_UpdateParams_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) UpdateExchangeRates(ctx context.Context, in *MsgUpdateExchangeRates, opts ...grpc.CallOption) (*MsgUpdateExchangeRatesResponse, error) {
+	out := new(MsgUpdateExchangeRatesResponse)
+	err := c.cc.Invoke(ctx, Msg_UpdateExchangeRates_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // MsgServer is the server API for Msg service.
 // All implementations must embed UnimplementedMsgServer
 // for forward compatibility
@@ -67,6 +91,10 @@ type MsgServer interface {
 	TokenizeShares(context.Context, *MsgTokenizeShares) (*MsgTokenizeSharesResponse, error)
 	// RedeemTokens converts liquid staking tokens back to delegation shares
 	RedeemTokens(context.Context, *MsgRedeemTokens) (*MsgRedeemTokensResponse, error)
+	// UpdateParams updates the module parameters via governance
+	UpdateParams(context.Context, *MsgUpdateParams) (*MsgUpdateParamsResponse, error)
+	// UpdateExchangeRates manually updates exchange rates for validators
+	UpdateExchangeRates(context.Context, *MsgUpdateExchangeRates) (*MsgUpdateExchangeRatesResponse, error)
 	mustEmbedUnimplementedMsgServer()
 }
 
@@ -79,6 +107,12 @@ func (UnimplementedMsgServer) TokenizeShares(context.Context, *MsgTokenizeShares
 }
 func (UnimplementedMsgServer) RedeemTokens(context.Context, *MsgRedeemTokens) (*MsgRedeemTokensResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RedeemTokens not implemented")
+}
+func (UnimplementedMsgServer) UpdateParams(context.Context, *MsgUpdateParams) (*MsgUpdateParamsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateParams not implemented")
+}
+func (UnimplementedMsgServer) UpdateExchangeRates(context.Context, *MsgUpdateExchangeRates) (*MsgUpdateExchangeRatesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateExchangeRates not implemented")
 }
 func (UnimplementedMsgServer) mustEmbedUnimplementedMsgServer() {}
 
@@ -129,6 +163,42 @@ func _Msg_RedeemTokens_Handler(srv interface{}, ctx context.Context, dec func(in
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Msg_UpdateParams_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgUpdateParams)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).UpdateParams(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Msg_UpdateParams_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).UpdateParams(ctx, req.(*MsgUpdateParams))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_UpdateExchangeRates_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgUpdateExchangeRates)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).UpdateExchangeRates(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Msg_UpdateExchangeRates_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).UpdateExchangeRates(ctx, req.(*MsgUpdateExchangeRates))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Msg_ServiceDesc is the grpc.ServiceDesc for Msg service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -143,6 +213,14 @@ var Msg_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RedeemTokens",
 			Handler:    _Msg_RedeemTokens_Handler,
+		},
+		{
+			MethodName: "UpdateParams",
+			Handler:    _Msg_UpdateParams_Handler,
+		},
+		{
+			MethodName: "UpdateExchangeRates",
+			Handler:    _Msg_UpdateExchangeRates_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

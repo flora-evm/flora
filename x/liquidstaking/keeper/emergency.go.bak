@@ -1,0 +1,210 @@
+package keeper
+
+import (
+	"fmt"
+	"time"
+	
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	
+	"github.com/rollchains/flora/x/liquidstaking/types"
+)
+
+// IsModulePaused checks if the module is currently paused
+func (k Keeper) IsModulePaused(ctx sdk.Context) bool {
+	params := k.GetParams(ctx)
+	return !params.Enabled
+}
+
+// RequireNotPaused returns an error if the module is paused
+func (k Keeper) RequireNotPaused(ctx sdk.Context) error {
+	if k.IsModulePaused(ctx) {
+		return fmt.Errorf("liquid staking module is currently paused")
+	}
+	return nil
+}
+
+// EmergencyPause pauses the module with a reason
+func (k Keeper) EmergencyPause(ctx sdk.Context, authority string, reason string, duration int64) error {
+	// Verify authority
+	if authority != k.authority {
+		return fmt.Errorf("unauthorized: only %s can pause the module", k.authority)
+	}
+	
+	// Get current params and disable
+	params := k.GetParams(ctx)
+	params.Enabled = false
+	if err := k.SetParams(ctx, params); err != nil {
+		return err
+	}
+	
+	// Store pause info
+	pauseInfo := types.EmergencyPauseInfo{
+		Paused:    true,
+		PausedAt:  ctx.BlockTime(),
+		Authority: authority,
+	}
+	
+	if duration > 0 {
+		pauseInfo.UnpauseAt = ctx.BlockTime().Add(time.Duration(duration) * time.Second)
+	}
+	
+	k.SetEmergencyPauseInfo(ctx, pauseInfo)
+	
+	// Emit event
+	ctx.EventManager().EmitEvent(
+		sdk.NewEvent(
+			types.EventTypeParameterUpdate,
+			sdk.NewAttribute(sdk.AttributeKeyAction, "emergency_pause"),
+			sdk.NewAttribute("authority", authority),
+			sdk.NewAttribute("reason", reason),
+			sdk.NewAttribute("duration", fmt.Sprintf("%d", duration)),
+		),
+	)
+	
+	return nil
+}
+
+// EmergencyUnpause unpauses the module
+func (k Keeper) EmergencyUnpause(ctx sdk.Context, authority string) error {
+	// Verify authority
+	if authority != k.authority {
+		return fmt.Errorf("unauthorized: only %s can unpause the module", k.authority)
+	}
+	
+	// Get current params and enable
+	params := k.GetParams(ctx)
+	params.Enabled = true
+	if err := k.SetParams(ctx, params); err != nil {
+		return err
+	}
+	
+	// Clear pause info
+	k.DeleteEmergencyPauseInfo(ctx)
+	
+	// Emit event
+	ctx.EventManager().EmitEvent(
+		sdk.NewEvent(
+			types.EventTypeParameterUpdate,
+			sdk.NewAttribute(sdk.AttributeKeyAction, "emergency_unpause"),
+			sdk.NewAttribute("authority", authority),
+		),
+	)
+	
+	return nil
+}
+
+// SetValidatorBlacklist sets the validator blacklist
+func (k Keeper) SetValidatorBlacklist(ctx sdk.Context, blacklist []string) error {
+	// Validate all addresses
+	for _, addr := range blacklist {
+		if _, err := sdk.ValAddressFromBech32(addr); err != nil {
+			return fmt.Errorf("invalid validator address %s: %w", addr, err)
+		}
+	}
+	
+	// Store blacklist
+	store := k.storeService.OpenKVStore(ctx)
+	
+	// Marshal as simple string list
+	bz := k.cdc.MustMarshal(&types.StringList{Values: blacklist})
+	
+	if err := store.Set([]byte("validator_blacklist"), bz); err != nil {
+		return err
+	}
+	
+	return nil
+}
+
+// GetValidatorBlacklist gets the validator blacklist
+func (k Keeper) GetValidatorBlacklist(ctx sdk.Context) []string {
+	store := k.storeService.OpenKVStore(ctx)
+	
+	bz, err := store.Get([]byte("validator_blacklist"))
+	if err != nil {
+		panic(err)
+	}
+	if bz == nil {
+		return []string{}
+	}
+	
+	var list types.StringList
+	k.cdc.MustUnmarshal(bz, &list)
+	return list.Values
+}
+
+// IsValidatorBlacklisted checks if a validator is blacklisted
+func (k Keeper) IsValidatorBlacklisted(ctx sdk.Context, validator string) bool {
+	blacklist := k.GetValidatorBlacklist(ctx)
+	for _, addr := range blacklist {
+		if addr == validator {
+			return true
+		}
+	}
+	return false
+}
+
+// SetValidatorWhitelist sets the validator whitelist
+func (k Keeper) SetValidatorWhitelist(ctx sdk.Context, whitelist []string) error {
+	// Validate all addresses
+	for _, addr := range whitelist {
+		if _, err := sdk.ValAddressFromBech32(addr); err != nil {
+			return fmt.Errorf("invalid validator address %s: %w", addr, err)
+		}
+	}
+	
+	// Store whitelist
+	store := k.storeService.OpenKVStore(ctx)
+	
+	// Marshal as simple string list
+	bz := k.cdc.MustMarshal(&types.StringList{Values: whitelist})
+	
+	if err := store.Set([]byte("validator_whitelist"), bz); err != nil {
+		return err
+	}
+	
+	return nil
+}
+
+// GetValidatorWhitelist gets the validator whitelist
+func (k Keeper) GetValidatorWhitelist(ctx sdk.Context) []string {
+	store := k.storeService.OpenKVStore(ctx)
+	
+	bz, err := store.Get([]byte("validator_whitelist"))
+	if err != nil {
+		panic(err)
+	}
+	if bz == nil {
+		return []string{}
+	}
+	
+	var list types.StringList
+	k.cdc.MustUnmarshal(bz, &list)
+	return list.Values
+}
+
+// IsValidatorWhitelisted checks if a validator is whitelisted
+// If whitelist is empty, all validators are allowed
+func (k Keeper) IsValidatorWhitelisted(ctx sdk.Context, validator string) bool {
+	whitelist := k.GetValidatorWhitelist(ctx)
+	if len(whitelist) == 0 {
+		return true // Empty whitelist means all validators are allowed
+	}
+	
+	for _, addr := range whitelist {
+		if addr == validator {
+			return true
+		}
+	}
+	return false
+}
+
+// IsValidatorAllowed checks if a validator is allowed for liquid staking
+func (k Keeper) IsValidatorAllowed(ctx sdk.Context, validator string) bool {
+	// Check blacklist first
+	if k.IsValidatorBlacklisted(ctx, validator) {
+		return false
+	}
+	
+	// Then check whitelist
+	return k.IsValidatorWhitelisted(ctx, validator)
+}

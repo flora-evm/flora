@@ -1,0 +1,371 @@
+package liquidstaking_test
+
+import (
+	"testing"
+
+	"cosmossdk.io/math"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	"github.com/stretchr/testify/require"
+
+	liquidstaking "github.com/rollchains/flora/x/liquidstaking"
+	"github.com/rollchains/flora/x/liquidstaking/types"
+)
+
+func TestExportLSTMetadata(t *testing.T) {
+	// Setup test suite
+	testKit := SetupTestSuite(t)
+	ctx := testKit.ctx
+	keeper := testKit.keeper
+	bankKeeper := testKit.bankKeeper
+
+	// Create test tokenization records
+	records := []types.TokenizationRecord{
+		{
+			Id:              1,
+			Validator:       "floravaloper1validator1",
+			Owner:           "flora1owner1",
+			SharesTokenized: math.NewInt(1000000),
+			Denom:           types.GenerateLiquidStakingTokenDenom("floravaloper1validator1", 1),
+		},
+		{
+			Id:              2,
+			Validator:       "floravaloper1validator2",
+			Owner:           "flora1owner2",
+			SharesTokenized: math.NewInt(2000000),
+			Denom:           types.GenerateLiquidStakingTokenDenom("floravaloper1validator2", 2),
+		},
+		{
+			Id:              3,
+			Validator:       "floravaloper1validator1",
+			Owner:           "flora1owner3",
+			SharesTokenized: math.NewInt(3000000),
+			Denom:           "", // Record without denom (shouldn't have metadata)
+		},
+	}
+
+	// Set records
+	for _, record := range records {
+		keeper.SetTokenizationRecordWithIndexes(ctx, record)
+		
+		// Set metadata for records with denoms
+		if record.Denom != "" {
+			metadata := types.GenerateLiquidStakingTokenMetadata(record.Validator, record.Id)
+			bankKeeper.SetDenomMetaData(ctx, metadata)
+		}
+	}
+
+	// Export metadata
+	exportedMetadata := liquidstaking.ExportLSTMetadata(ctx, keeper, bankKeeper)
+
+	// Verify only LST metadata was exported
+	require.Len(t, exportedMetadata, 2) // Only records 1 and 2 have denoms
+
+	// Verify exported metadata
+	metadataMap := make(map[string]banktypes.Metadata)
+	for _, meta := range exportedMetadata {
+		metadataMap[meta.Base] = meta
+	}
+
+	// Check record 1 metadata
+	meta1, found := metadataMap[records[0].Denom]
+	require.True(t, found)
+	require.Equal(t, records[0].Denom, meta1.Base)
+	require.Contains(t, meta1.Display, "LST")
+
+	// Check record 2 metadata
+	meta2, found := metadataMap[records[1].Denom]
+	require.True(t, found)
+	require.Equal(t, records[1].Denom, meta2.Base)
+	require.Contains(t, meta2.Display, "LST")
+}
+
+func TestInitLSTMetadata(t *testing.T) {
+	// Setup test suite
+	testKit := SetupTestSuite(t)
+	ctx := testKit.ctx
+	keeper := testKit.keeper
+	bankKeeper := testKit.bankKeeper
+
+	// Create test tokenization records
+	records := []types.TokenizationRecord{
+		{
+			Id:              1,
+			Validator:       "floravaloper1validator1",
+			Owner:           "flora1owner1",
+			SharesTokenized: math.NewInt(1000000),
+			Denom:           types.GenerateLiquidStakingTokenDenom("floravaloper1validator1", 1),
+		},
+		{
+			Id:              2,
+			Validator:       "floravaloper1validator2",
+			Owner:           "flora1owner2",
+			SharesTokenized: math.NewInt(2000000),
+			Denom:           types.GenerateLiquidStakingTokenDenom("floravaloper1validator2", 2),
+		},
+	}
+
+	// Set records and denom indexes
+	for _, record := range records {
+		keeper.SetTokenizationRecordWithIndexes(ctx, record)
+		keeper.setTokenizationRecordDenomIndex(ctx, record.Denom, record.Id)
+	}
+
+	// Create metadata to import
+	metadata := []banktypes.Metadata{
+		types.GenerateLiquidStakingTokenMetadata(records[0].Validator, records[0].Id),
+		types.GenerateLiquidStakingTokenMetadata(records[1].Validator, records[1].Id),
+	}
+
+	// Initialize metadata
+	err := liquidstaking.InitLSTMetadata(ctx, keeper, bankKeeper, metadata)
+	require.NoError(t, err)
+
+	// Verify metadata was set
+	for _, record := range records {
+		meta, found := bankKeeper.GetDenomMetaData(ctx, record.Denom)
+		require.True(t, found)
+		require.Equal(t, record.Denom, meta.Base)
+		require.Contains(t, meta.Display, "LST")
+		require.Contains(t, meta.Description, record.Validator)
+	}
+}
+
+func TestInitLSTMetadataWithInvalidDenom(t *testing.T) {
+	// Setup test suite
+	testKit := SetupTestSuite(t)
+	ctx := testKit.ctx
+	keeper := testKit.keeper
+	bankKeeper := testKit.bankKeeper
+
+	// Create metadata for non-existent record
+	metadata := []banktypes.Metadata{
+		types.GenerateLiquidStakingTokenMetadata("floravaloper1validator1", 1),
+	}
+
+	// Try to initialize metadata without corresponding record
+	err := liquidstaking.InitLSTMetadata(ctx, keeper, bankKeeper, metadata)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no corresponding tokenization record exists")
+}
+
+func TestValidateLSTMetadata(t *testing.T) {
+	testCases := []struct {
+		name        string
+		setup       func(*TestSuite)
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name: "valid metadata",
+			setup: func(suite *TestSuite) {
+				// Create record with metadata
+				record := types.TokenizationRecord{
+					Id:              1,
+					Validator:       "floravaloper1validator1",
+					Owner:           "flora1owner1",
+					SharesTokenized: math.NewInt(1000000),
+					Denom:           types.GenerateLiquidStakingTokenDenom("floravaloper1validator1", 1),
+				}
+				suite.keeper.SetTokenizationRecordWithIndexes(suite.ctx, record)
+				suite.keeper.setTokenizationRecordDenomIndex(suite.ctx, record.Denom, record.Id)
+				
+				// Set metadata
+				metadata := types.GenerateLiquidStakingTokenMetadata(record.Validator, record.Id)
+				suite.bankKeeper.SetDenomMetaData(suite.ctx, metadata)
+			},
+			expectError: false,
+		},
+		{
+			name: "missing metadata",
+			setup: func(suite *TestSuite) {
+				// Create record without metadata
+				record := types.TokenizationRecord{
+					Id:              1,
+					Validator:       "floravaloper1validator1",
+					Owner:           "flora1owner1",
+					SharesTokenized: math.NewInt(1000000),
+					Denom:           types.GenerateLiquidStakingTokenDenom("floravaloper1validator1", 1),
+				}
+				suite.keeper.SetTokenizationRecordWithIndexes(suite.ctx, record)
+				suite.keeper.setTokenizationRecordDenomIndex(suite.ctx, record.Denom, record.Id)
+				// Don't set metadata
+			},
+			expectError: true,
+			errorMsg:    "no metadata found",
+		},
+		{
+			name: "metadata without record",
+			setup: func(suite *TestSuite) {
+				// Set metadata without corresponding record
+				denom := types.GenerateLiquidStakingTokenDenom("floravaloper1validator1", 1)
+				metadata := types.GenerateLiquidStakingTokenMetadata("floravaloper1validator1", 1)
+				suite.bankKeeper.SetDenomMetaData(suite.ctx, metadata)
+				// Don't create record
+			},
+			expectError: true,
+			errorMsg:    "no tokenization record found",
+		},
+		{
+			name: "record without denom has no metadata",
+			setup: func(suite *TestSuite) {
+				// Create record without denom (valid case)
+				record := types.TokenizationRecord{
+					Id:              1,
+					Validator:       "floravaloper1validator1",
+					Owner:           "flora1owner1",
+					SharesTokenized: math.NewInt(1000000),
+					Denom:           "", // No denom
+				}
+				suite.keeper.SetTokenizationRecordWithIndexes(suite.ctx, record)
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			suite := SetupTestSuite(t)
+			tc.setup(suite)
+			
+			err := liquidstaking.ValidateLSTMetadata(suite.ctx, suite.keeper, suite.bankKeeper)
+			if tc.expectError {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tc.errorMsg)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestMigrateLSTMetadata(t *testing.T) {
+	// Setup test suite
+	testKit := SetupTestSuite(t)
+	ctx := testKit.ctx
+	keeper := testKit.keeper
+	bankKeeper := testKit.bankKeeper
+
+	// Create test tokenization records
+	records := []types.TokenizationRecord{
+		{
+			Id:              1,
+			Validator:       "floravaloper1validator1",
+			Owner:           "flora1owner1",
+			SharesTokenized: math.NewInt(1000000),
+			Denom:           types.GenerateLiquidStakingTokenDenom("floravaloper1validator1", 1),
+		},
+		{
+			Id:              2,
+			Validator:       "floravaloper1validator2",
+			Owner:           "flora1owner2",
+			SharesTokenized: math.NewInt(2000000),
+			Denom:           types.GenerateLiquidStakingTokenDenom("floravaloper1validator2", 2),
+		},
+		{
+			Id:              3,
+			Validator:       "floravaloper1validator1",
+			Owner:           "flora1owner3",
+			SharesTokenized: math.NewInt(3000000),
+			Denom:           "", // No denom
+		},
+	}
+
+	// Set records
+	for _, record := range records {
+		keeper.SetTokenizationRecordWithIndexes(ctx, record)
+		if record.Denom != "" {
+			keeper.setTokenizationRecordDenomIndex(ctx, record.Denom, record.Id)
+		}
+	}
+
+	// Don't set metadata for record 1 (simulating missing metadata)
+	// Set metadata for record 2
+	metadata2 := types.GenerateLiquidStakingTokenMetadata(records[1].Validator, records[1].Id)
+	bankKeeper.SetDenomMetaData(ctx, metadata2)
+
+	// Run migration
+	err := liquidstaking.MigrateLSTMetadata(ctx, keeper, bankKeeper)
+	require.NoError(t, err)
+
+	// Verify metadata was created for record 1
+	meta1, found := bankKeeper.GetDenomMetaData(ctx, records[0].Denom)
+	require.True(t, found)
+	require.Equal(t, records[0].Denom, meta1.Base)
+
+	// Verify metadata still exists for record 2
+	meta2, found := bankKeeper.GetDenomMetaData(ctx, records[1].Denom)
+	require.True(t, found)
+	require.Equal(t, records[1].Denom, meta2.Base)
+
+	// Verify no metadata for record 3 (no denom)
+	_, found = bankKeeper.GetDenomMetaData(ctx, "")
+	require.False(t, found)
+}
+
+func TestGenesisRoundTripWithMetadata(t *testing.T) {
+	// Setup first instance
+	suite1 := SetupTestSuite(t)
+	ctx1 := suite1.ctx
+	keeper1 := suite1.keeper
+	bankKeeper1 := suite1.bankKeeper
+
+	// Create and set tokenization records with metadata
+	records := []types.TokenizationRecord{
+		{
+			Id:              1,
+			Validator:       "floravaloper1validator1",
+			Owner:           "flora1owner1",
+			SharesTokenized: math.NewInt(1000000),
+			Denom:           types.GenerateLiquidStakingTokenDenom("floravaloper1validator1", 1),
+		},
+		{
+			Id:              2,
+			Validator:       "floravaloper1validator2",
+			Owner:           "flora1owner2",
+			SharesTokenized: math.NewInt(2000000),
+			Denom:           types.GenerateLiquidStakingTokenDenom("floravaloper1validator2", 2),
+		},
+	}
+
+	// Initialize genesis with records
+	genState := types.GenesisState{
+		Params:                   types.DefaultParams(),
+		TokenizationRecords:      records,
+		LastTokenizationRecordId: 2,
+	}
+	keeper1.InitGenesis(ctx1, genState)
+
+	// Set metadata for each record
+	for _, record := range records {
+		metadata := types.GenerateLiquidStakingTokenMetadata(record.Validator, record.Id)
+		bankKeeper1.SetDenomMetaData(ctx1, metadata)
+	}
+
+	// Export genesis and metadata
+	exportedGenesis := keeper1.ExportGenesis(ctx1)
+	exportedMetadata := liquidstaking.ExportLSTMetadata(ctx1, keeper1, bankKeeper1)
+
+	// Setup second instance
+	suite2 := SetupTestSuite(t)
+	ctx2 := suite2.ctx
+	keeper2 := suite2.keeper
+	bankKeeper2 := suite2.bankKeeper
+
+	// Import genesis and metadata
+	keeper2.InitGenesis(ctx2, *exportedGenesis)
+	err := liquidstaking.InitLSTMetadata(ctx2, keeper2, bankKeeper2, exportedMetadata)
+	require.NoError(t, err)
+
+	// Validate metadata
+	err = liquidstaking.ValidateLSTMetadata(ctx2, keeper2, bankKeeper2)
+	require.NoError(t, err)
+
+	// Verify all metadata was properly imported
+	for _, record := range records {
+		meta, found := bankKeeper2.GetDenomMetaData(ctx2, record.Denom)
+		require.True(t, found)
+		require.Equal(t, record.Denom, meta.Base)
+		require.Contains(t, meta.Display, "LST")
+		require.Contains(t, meta.Description, record.Validator)
+	}
+}

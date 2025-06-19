@@ -1,0 +1,267 @@
+package keeper
+
+import (
+	"fmt"
+	"time"
+
+	"cosmossdk.io/math"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
+	
+	"github.com/rollchains/flora/x/liquidstaking/types"
+)
+
+// AutoCompoundState tracks the state of auto-compound operations
+type AutoCompoundState struct {
+	LastCompoundTime   time.Time
+	LastCompoundHeight int64
+	TotalCompounded    math.Int
+}
+
+// BeginBlocker runs at the beginning of each block
+func (k Keeper) BeginBlocker(ctx sdk.Context) error {
+	// Check for automatic unpause
+	k.CheckEmergencyPause(ctx)
+	
+	// Check if auto-compound is enabled
+	params := k.GetParams(ctx)
+	if !params.AutoCompoundEnabled {
+		return nil
+	}
+
+	// Check if we should compound in this block
+	if !k.shouldCompoundInBlock(ctx, params) {
+		return nil
+	}
+
+	// Perform auto-compound for all validators with LST tokens
+	if err := k.AutoCompoundAllValidators(ctx); err != nil {
+		k.Logger(ctx).Error("failed to auto-compound all validators", "error", err)
+		// Don't return error to avoid halting the chain
+		// This will be retried in the next eligible block
+	}
+
+	return nil
+}
+
+// shouldCompoundInBlock checks if auto-compound should run in this block
+func (k Keeper) shouldCompoundInBlock(ctx sdk.Context, params types.ModuleParams) bool {
+	// Get the last compound height
+	lastHeight := k.GetLastAutoCompoundHeight(ctx)
+	currentHeight := ctx.BlockHeight()
+	
+	// Check if enough blocks have passed
+	if currentHeight-lastHeight < params.AutoCompoundFrequencyBlocks {
+		return false
+	}
+	
+	return true
+}
+
+// AutoCompoundAllValidators compounds rewards for all validators with LST tokens
+func (k Keeper) AutoCompoundAllValidators(ctx sdk.Context) error {
+	compoundCount := 0
+	totalCompounded := math.ZeroInt()
+	
+	// Get module account
+	moduleAddr := k.accountKeeper.GetModuleAddress(types.ModuleName)
+	if moduleAddr == nil {
+		return fmt.Errorf("module account not found")
+	}
+	
+	// Iterate through all validators with LST tokens
+	k.IterateExchangeRates(ctx, func(rate types.ExchangeRate) bool {
+		valAddr, err := sdk.ValAddressFromBech32(rate.ValidatorAddress)
+		if err != nil {
+			k.Logger(ctx).Error("invalid validator address", "address", rate.ValidatorAddress, "error", err)
+			return false // continue iteration
+		}
+		
+		// Compound rewards for this validator
+		compounded, err := k.CompoundValidatorRewards(ctx, valAddr, moduleAddr)
+		if err != nil {
+			k.Logger(ctx).Error("failed to compound rewards", 
+				"validator", rate.ValidatorAddress, 
+				"error", err)
+			return false // continue iteration
+		}
+		
+		if compounded.IsPositive() {
+			compoundCount++
+			totalCompounded = totalCompounded.Add(compounded)
+			
+			// Update exchange rate after compounding
+			if err := k.UpdateExchangeRate(ctx, rate.ValidatorAddress); err != nil {
+				k.Logger(ctx).Error("failed to update exchange rate after compounding",
+					"validator", rate.ValidatorAddress,
+					"error", err)
+			}
+		}
+		
+		return false // continue iteration
+	})
+	
+	// Update last compound height
+	k.SetLastAutoCompoundHeight(ctx, ctx.BlockHeight())
+	
+	// Emit event if any rewards were compounded
+	if compoundCount > 0 {
+		ctx.EventManager().EmitEvent(
+			sdk.NewEvent(
+				types.EventTypeRewardsCompounded,
+				sdk.NewAttribute(types.AttributeKeyValidatorCount, fmt.Sprintf("%d", compoundCount)),
+				sdk.NewAttribute(types.AttributeKeyTotalCompounded, totalCompounded.String()),
+				sdk.NewAttribute(types.AttributeKeyBlockHeight, fmt.Sprintf("%d", ctx.BlockHeight())),
+			),
+		)
+	}
+	
+	k.Logger(ctx).Info("auto-compound completed",
+		"validators", compoundCount,
+		"total_compounded", totalCompounded.String(),
+		"height", ctx.BlockHeight())
+	
+	return nil
+}
+
+// CompoundValidatorRewards withdraws and re-delegates rewards for a validator
+func (k Keeper) CompoundValidatorRewards(ctx sdk.Context, valAddr sdk.ValAddress, moduleAddr sdk.AccAddress) (math.Int, error) {
+	// Get validator
+	validator, err := k.stakingKeeper.GetValidator(ctx, valAddr)
+	if err != nil {
+		return math.ZeroInt(), err
+	}
+	
+	// Get accumulated rewards
+	rewards, err := k.distributionKeeper.GetValidatorAccumulatedRewards(ctx, valAddr)
+	if err != nil {
+		return math.ZeroInt(), err
+	}
+	
+	// Get bond denomination
+	bondDenom, err := k.stakingKeeper.BondDenom(ctx)
+	if err != nil {
+		return math.ZeroInt(), err
+	}
+	
+	// Get reward amount in bond denom
+	rewardAmount := rewards.AmountOf(bondDenom).TruncateInt()
+	if !rewardAmount.IsPositive() {
+		return math.ZeroInt(), nil // No rewards to compound
+	}
+	
+	// Withdraw rewards to module account
+	// Note: In a real implementation, this would require proper integration
+	// with the distribution module's withdrawal mechanism
+	// For now, we'll delegate directly without withdrawal
+	
+	// Delegate the rewards back to the validator
+	shares, err := k.stakingKeeper.Delegate(
+		ctx,
+		moduleAddr,
+		rewardAmount,
+		stakingtypes.Unbonded,
+		validator,
+		true, // subtract from account
+	)
+	if err != nil {
+		return math.ZeroInt(), fmt.Errorf("failed to delegate rewards: %w", err)
+	}
+	
+	k.Logger(ctx).Info("compounded rewards",
+		"validator", valAddr.String(),
+		"amount", rewardAmount.String(),
+		"shares", shares.String())
+	
+	return rewardAmount, nil
+}
+
+// GetLastAutoCompoundHeight retrieves the last block height where auto-compound ran
+func (k Keeper) GetLastAutoCompoundHeight(ctx sdk.Context) int64 {
+	store := k.storeService.OpenKVStore(ctx)
+	bz, err := store.Get(types.LastAutoCompoundHeightKey)
+	if err != nil {
+		k.Logger(ctx).Error("failed to get last auto-compound height", "error", err)
+		return 0
+	}
+	if bz == nil {
+		return 0
+	}
+	
+	return int64(sdk.BigEndianToUint64(bz))
+}
+
+// SetLastAutoCompoundHeight stores the last block height where auto-compound ran
+func (k Keeper) SetLastAutoCompoundHeight(ctx sdk.Context, height int64) {
+	store := k.storeService.OpenKVStore(ctx)
+	bz := sdk.Uint64ToBigEndian(uint64(height))
+	
+	if err := store.Set(types.LastAutoCompoundHeightKey, bz); err != nil {
+		panic(fmt.Sprintf("failed to set last auto-compound height: %v", err))
+	}
+}
+
+// ValidateAutoCompoundParams validates auto-compound parameters
+func ValidateAutoCompoundParams(params types.ModuleParams) error {
+	// Frequency must be positive if enabled
+	if params.AutoCompoundEnabled && params.AutoCompoundFrequencyBlocks <= 0 {
+		return fmt.Errorf("auto-compound frequency must be positive when enabled")
+	}
+	
+	// Max rate change must be between 0 and 100%
+	if params.MaxRateChangePerUpdate.IsNegative() || params.MaxRateChangePerUpdate.GT(math.LegacyOneDec()) {
+		return fmt.Errorf("max rate change must be between 0 and 1 (100%%)")
+	}
+	
+	// Min blocks between updates must be positive
+	if params.MinBlocksBetweenUpdates < 0 {
+		return fmt.Errorf("min blocks between updates cannot be negative")
+	}
+	
+	return nil
+}
+
+// ApplyRateLimits ensures exchange rate changes are within acceptable bounds
+func (k Keeper) ApplyRateLimits(ctx sdk.Context, validatorAddr string, oldRate, newRate math.LegacyDec) (math.LegacyDec, bool) {
+	params := k.GetParams(ctx)
+	
+	// Calculate percentage change
+	if oldRate.IsZero() {
+		return newRate, true // No limit on first rate
+	}
+	
+	changeRatio := newRate.Sub(oldRate).Quo(oldRate)
+	
+	// Check if change exceeds maximum allowed
+	if changeRatio.Abs().GT(params.MaxRateChangePerUpdate) {
+		// Cap the change at maximum allowed
+		maxChange := oldRate.Mul(params.MaxRateChangePerUpdate)
+		if changeRatio.IsPositive() {
+			return oldRate.Add(maxChange), false
+		}
+		return oldRate.Sub(maxChange), false
+	}
+	
+	return newRate, true
+}
+
+// CanUpdateExchangeRate checks if enough time has passed since last update
+func (k Keeper) CanUpdateExchangeRate(ctx sdk.Context, validatorAddr string) bool {
+	params := k.GetParams(ctx)
+	
+	rate, found := k.GetExchangeRate(ctx, validatorAddr)
+	if !found {
+		return true // Can always set initial rate
+	}
+	
+	// Check if enough blocks have passed
+	// This is a simplified check - in production, you'd track the actual block height of last update
+	_ = ctx.BlockHeight()
+	
+	// For now, always allow update if rate was set at height 0 (initialization)
+	// Otherwise check if enough time has passed based on block time
+	timeSinceUpdate := ctx.BlockTime().Unix() - rate.LastUpdated
+	blocksEstimate := timeSinceUpdate / 3 // Assume ~3 second blocks
+	
+	return blocksEstimate >= params.MinBlocksBetweenUpdates
+}

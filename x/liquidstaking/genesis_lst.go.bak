@@ -1,0 +1,72 @@
+package liquidstaking
+
+import (
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	
+	"github.com/rollchains/flora/x/liquidstaking/keeper"
+	"github.com/rollchains/flora/x/liquidstaking/types"
+)
+
+// ExportLSTMetadata exports all liquid staking token metadata for genesis
+func ExportLSTMetadata(ctx sdk.Context, k keeper.Keeper, bankKeeper types.BankKeeper) []banktypes.Metadata {
+	var metadata []banktypes.Metadata
+	
+	// Iterate through all tokenization records
+	records := k.GetAllTokenizationRecords(ctx)
+	for _, record := range records {
+		// Get metadata from bank keeper
+		meta, found := bankKeeper.GetDenomMetaData(ctx, record.Denom)
+		if found {
+			metadata = append(metadata, meta)
+		}
+	}
+	
+	return metadata
+}
+
+// InitLSTMetadata initializes liquid staking token metadata from genesis
+func InitLSTMetadata(ctx sdk.Context, k keeper.Keeper, bankKeeper types.BankKeeper, metadata []banktypes.Metadata) {
+	// Set metadata for each LST denom
+	for _, meta := range metadata {
+		// Only set metadata for LST denoms
+		if types.IsLiquidStakingTokenDenom(meta.Base) {
+			bankKeeper.SetDenomMetaData(ctx, meta)
+		}
+	}
+}
+
+// ValidateLSTGenesis validates LST-related genesis state
+func ValidateLSTGenesis(ctx sdk.Context, k keeper.Keeper, bankKeeper types.BankKeeper, records []types.TokenizationRecord) error {
+	// Map to track unique denoms
+	denomMap := make(map[string]bool)
+	
+	for _, record := range records {
+		// Check for duplicate denoms
+		if denomMap[record.Denom] {
+			return types.ErrDuplicateLiquidStakingToken.Wrapf("duplicate denom: %s", record.Denom)
+		}
+		denomMap[record.Denom] = true
+		
+		// Validate denom format
+		if !types.IsLiquidStakingTokenDenom(record.Denom) {
+			return types.ErrInvalidLiquidStakingTokenDenom.Wrapf("invalid denom format: %s", record.Denom)
+		}
+		
+		// Check if metadata exists for the denom
+		_, found := bankKeeper.GetDenomMetaData(ctx, record.Denom)
+		if !found {
+			return types.ErrMetadataNotFound.Wrapf("metadata not found for denom: %s", record.Denom)
+		}
+	}
+	
+	return nil
+}
+
+// MigrateLSTDenoms handles any necessary migrations for LST denoms
+// This is useful for chain upgrades that might change denom formats
+func MigrateLSTDenoms(ctx sdk.Context, k keeper.Keeper, bankKeeper types.BankKeeper) error {
+	// Currently no migrations needed
+	// This function serves as a placeholder for future migrations
+	return nil
+}

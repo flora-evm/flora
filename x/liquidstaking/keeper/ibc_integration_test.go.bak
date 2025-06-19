@@ -1,0 +1,74 @@
+package keeper_test
+
+import (
+	"testing"
+
+	"cosmossdk.io/math"
+	"github.com/stretchr/testify/suite"
+	
+	"github.com/rollchains/flora/x/liquidstaking/keeper"
+	"github.com/rollchains/flora/x/liquidstaking/types"
+)
+
+type IBCIntegrationTestSuite struct {
+	KeeperTestSuite
+}
+
+func TestIBCIntegrationTestSuite(t *testing.T) {
+	suite.Run(t, new(IBCIntegrationTestSuite))
+}
+
+func (suite *IBCIntegrationTestSuite) TestIBCMiddlewareCreation() {
+	// Test that we can create IBC middleware
+	middleware := keeper.NewIBCMiddleware(nil, suite.keeper)
+	suite.NotNil(middleware)
+}
+
+func (suite *IBCIntegrationTestSuite) TestIBCHooksCreation() {
+	// Test that we can create IBC hooks
+	hooks := keeper.NewIBCHooks(suite.keeper)
+	suite.NotNil(hooks)
+}
+
+func (suite *IBCIntegrationTestSuite) TestIBCTransferHandlerCreation() {
+	// Test that we can create IBC transfer handler
+	// Note: This requires transfer and channel keepers which are set in the keeper
+	handler := keeper.NewIBCTransferHandler(suite.keeper, nil, nil)
+	suite.NotNil(handler)
+}
+
+func (suite *IBCIntegrationTestSuite) TestLiquidStakingTokenDenomCheck() {
+	// Test the liquid staking token denom check
+	validatorAddr := "floravaloper1abc123"
+	recordID := uint64(1)
+	
+	// Generate a liquid staking token denom
+	denom := types.GenerateLiquidStakingTokenDenom(validatorAddr, recordID)
+	
+	// Check if it's recognized as a liquid staking token
+	suite.True(types.IsLiquidStakingTokenDenom(denom))
+	
+	// Parse it back
+	parsedValidator, parsedRecordID, err := types.ParseLiquidStakingTokenDenom(denom)
+	suite.NoError(err)
+	suite.Equal(validatorAddr, parsedValidator)
+	suite.Equal(recordID, parsedRecordID)
+}
+
+func (suite *IBCIntegrationTestSuite) TestLiquidStakingMetadataCreation() {
+	// Create a tokenization record
+	record := types.TokenizationRecord{
+		Id:              1,
+		Validator:       "floravaloper1abc123",
+		SharesTokenized: math.NewInt(1000000),
+	}
+	
+	// Generate denom
+	denom := types.GenerateLiquidStakingTokenDenom(record.Validator, record.Id)
+	
+	// Extract metadata
+	metadata := types.ExtractLiquidStakingMetadata(denom, record)
+	suite.NotNil(metadata)
+	suite.Equal(record.Validator, metadata.ValidatorAddress)
+	suite.Equal(record.Id, metadata.RecordId)
+}

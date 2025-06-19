@@ -1,0 +1,342 @@
+package keeper_test
+
+import (
+	"testing"
+	"time"
+
+	"cosmossdk.io/math"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/stretchr/testify/suite"
+
+	"github.com/rollchains/flora/x/liquidstaking/keeper"
+	"github.com/rollchains/flora/x/liquidstaking/types"
+)
+
+type ProposalsTestSuite struct {
+	KeeperTestSuite
+}
+
+func TestProposalsTestSuite(t *testing.T) {
+	suite.Run(t, new(ProposalsTestSuite))
+}
+
+func (suite *ProposalsTestSuite) TestUpdateParamsProposal() {
+	ctx := suite.ctx
+	k := suite.keeper
+
+	// Create proposal handler
+	handler := keeper.NewProposalHandler(k)
+
+	// Test valid parameter updates
+	testCases := []struct {
+		name      string
+		changes   []types.ParamChange
+		expectErr bool
+	}{
+		{
+			"valid single param change",
+			[]types.ParamChange{
+				{Key: "enabled", Value: "true"},
+			},
+			false,
+		},
+		{
+			"valid multiple param changes",
+			[]types.ParamChange{
+				{Key: "enabled", Value: "true"},
+				{Key: "global_liquid_staking_cap", Value: "0.75"},
+				{Key: "validator_liquid_cap", Value: "0.5"},
+				{Key: "min_liquid_stake_amount", Value: "1000000"},
+			},
+			false,
+		},
+		{
+			"invalid param key",
+			[]types.ParamChange{
+				{Key: "invalid_param", Value: "true"},
+			},
+			true,
+		},
+		{
+			"invalid bool value",
+			[]types.ParamChange{
+				{Key: "enabled", Value: "not_a_bool"},
+			},
+			true,
+		},
+		{
+			"invalid decimal value",
+			[]types.ParamChange{
+				{Key: "global_liquid_staking_cap", Value: "not_a_decimal"},
+			},
+			true,
+		},
+		{
+			"cap exceeds 100%",
+			[]types.ParamChange{
+				{Key: "global_liquid_staking_cap", Value: "1.5"},
+			},
+			true,
+		},
+		{
+			"negative cap",
+			[]types.ParamChange{
+				{Key: "validator_liquid_cap", Value: "-0.1"},
+			},
+			true,
+		},
+		{
+			"auto compound params",
+			[]types.ParamChange{
+				{Key: "auto_compound_enabled", Value: "true"},
+				{Key: "auto_compound_frequency_blocks", Value: "28800"},
+				{Key: "max_rate_change_per_update", Value: "0.02"},
+				{Key: "min_blocks_between_updates", Value: "100"},
+			},
+			false,
+		},
+	}
+
+	for _, tc := range testCases {
+		suite.Run(tc.name, func() {
+			// Create proposal
+			proposal := types.NewUpdateParamsProposal(
+				"Test Proposal",
+				"Test Description",
+				tc.changes,
+			)
+
+			// Validate proposal
+			err := proposal.ValidateBasic()
+			if tc.expectErr {
+				suite.Require().Error(err)
+				return
+			}
+			suite.Require().NoError(err)
+
+			// Execute proposal
+			err = handler(ctx, proposal)
+			if tc.expectErr {
+				suite.Require().Error(err)
+			} else {
+				suite.Require().NoError(err)
+
+				// Verify parameters were updated
+				params := k.GetParams(ctx)
+				for _, change := range tc.changes {
+					switch change.Key {
+					case "enabled":
+						suite.Equal(change.Value, "true")
+						suite.True(params.Enabled)
+					case "global_liquid_staking_cap":
+						expectedCap, _ := math.LegacyNewDecFromStr(change.Value)
+						suite.Equal(expectedCap, params.GlobalLiquidStakingCap)
+					case "validator_liquid_cap":
+						expectedCap, _ := math.LegacyNewDecFromStr(change.Value)
+						suite.Equal(expectedCap, params.ValidatorLiquidCap)
+					case "min_liquid_stake_amount":
+						expectedAmount, _ := math.NewIntFromString(change.Value)
+						suite.Equal(expectedAmount, params.MinLiquidStakeAmount)
+					}
+				}
+			}
+		})
+	}
+}
+
+func (suite *ProposalsTestSuite) TestEmergencyPauseProposal() {
+	ctx := suite.ctx
+	k := suite.keeper
+
+	// Create proposal handler
+	handler := keeper.NewProposalHandler(k)
+
+	// Ensure module is enabled initially
+	params := k.GetParams(ctx)
+	params.Enabled = true
+	suite.Require().NoError(k.SetParams(ctx, params))
+
+	// Test pause proposal
+	pauseProposal := types.NewEmergencyPauseProposal(
+		"Emergency Pause",
+		"Critical issue found",
+		true,  // pause
+		3600,  // 1 hour duration
+	)
+
+	// Validate and execute
+	suite.Require().NoError(pauseProposal.ValidateBasic())
+	suite.Require().NoError(handler(ctx, pauseProposal))
+
+	// Verify module is paused
+	params = k.GetParams(ctx)
+	suite.False(params.Enabled)
+
+	// Verify pause info is stored
+	pauseInfo, found := k.GetEmergencyPauseInfo(ctx)
+	suite.True(found)
+	suite.True(pauseInfo.Paused)
+	suite.Equal("governance", pauseInfo.Authority)
+	suite.True(pauseInfo.UnpauseAt.After(ctx.BlockTime()))
+
+	// Test unpause proposal
+	unpauseProposal := types.NewEmergencyPauseProposal(
+		"Emergency Unpause",
+		"Issue resolved",
+		false, // unpause
+		0,     // no duration for unpause
+	)
+
+	// Validate and execute
+	suite.Require().NoError(unpauseProposal.ValidateBasic())
+	suite.Require().NoError(handler(ctx, unpauseProposal))
+
+	// Verify module is unpaused
+	params = k.GetParams(ctx)
+	suite.True(params.Enabled)
+
+	// Verify pause info is cleared
+	_, found = k.GetEmergencyPauseInfo(ctx)
+	suite.False(found)
+}
+
+func (suite *ProposalsTestSuite) TestUpdateValidatorCapProposal() {
+	ctx := suite.ctx
+	k := suite.keeper
+
+	// Create proposal handler
+	handler := keeper.NewProposalHandler(k)
+
+	// Create a validator
+	valAddr := sdk.ValAddress([]byte("validator1"))
+
+	testCases := []struct {
+		name      string
+		valAddr   string
+		liquidCap string
+		expectErr bool
+	}{
+		{
+			"valid cap update",
+			valAddr.String(),
+			"0.75",
+			false,
+		},
+		{
+			"cap at 100%",
+			valAddr.String(),
+			"1.0",
+			false,
+		},
+		{
+			"cap at 0%",
+			valAddr.String(),
+			"0",
+			false,
+		},
+		{
+			"invalid validator address",
+			"invalid_address",
+			"0.5",
+			true,
+		},
+		{
+			"negative cap",
+			valAddr.String(),
+			"-0.1",
+			true,
+		},
+		{
+			"cap exceeds 100%",
+			valAddr.String(),
+			"1.5",
+			true,
+		},
+		{
+			"invalid decimal",
+			valAddr.String(),
+			"not_a_number",
+			true,
+		},
+	}
+
+	for _, tc := range testCases {
+		suite.Run(tc.name, func() {
+			// Create proposal
+			proposal := types.NewUpdateValidatorCapProposal(
+				"Update Validator Cap",
+				"Adjust cap for validator",
+				tc.valAddr,
+				tc.liquidCap,
+			)
+
+			// Validate proposal
+			err := proposal.ValidateBasic()
+			if tc.expectErr {
+				suite.Require().Error(err)
+				return
+			}
+			suite.Require().NoError(err)
+
+			// Execute proposal
+			err = handler(ctx, proposal)
+			if tc.expectErr {
+				suite.Require().Error(err)
+			} else {
+				suite.Require().NoError(err)
+
+				// Verify cap was set
+				cap, found := k.GetValidatorLiquidCap(ctx, tc.valAddr)
+				suite.True(found)
+				expectedCap, _ := math.LegacyNewDecFromStr(tc.liquidCap)
+				suite.Equal(expectedCap, cap)
+			}
+		})
+	}
+}
+
+func (suite *ProposalsTestSuite) TestInvalidProposalContent() {
+	ctx := suite.ctx
+	k := suite.keeper
+
+	// Create proposal handler
+	handler := keeper.NewProposalHandler(k)
+
+	// Test with nil content
+	err := handler(ctx, nil)
+	suite.Require().Error(err)
+	suite.Contains(err.Error(), "unrecognized liquid staking proposal content type")
+}
+
+func (suite *ProposalsTestSuite) TestAutomaticUnpause() {
+	ctx := suite.ctx
+	k := suite.keeper
+
+	// Create proposal handler
+	handler := keeper.NewProposalHandler(k)
+
+	// Pause for a short duration
+	pauseProposal := types.NewEmergencyPauseProposal(
+		"Short Pause",
+		"Testing automatic unpause",
+		true,
+		1, // 1 second
+	)
+
+	// Execute pause
+	suite.Require().NoError(handler(ctx, pauseProposal))
+
+	// Verify paused
+	params := k.GetParams(ctx)
+	suite.False(params.Enabled)
+
+	// Move time forward
+	ctx = ctx.WithBlockTime(ctx.BlockTime().Add(2 * time.Second))
+
+	// Check emergency pause (should automatically unpause)
+	k.CheckEmergencyPause(ctx)
+
+	// Verify unpaused
+	params = k.GetParams(ctx)
+	suite.True(params.Enabled)
+}

@@ -1,0 +1,144 @@
+package keeper_test
+
+import (
+	"testing"
+	
+	"cosmossdk.io/math"
+	"github.com/stretchr/testify/require"
+	
+	"github.com/rollchains/flora/x/liquidstaking/types"
+)
+
+func TestGenesis(t *testing.T) {
+	suite := setupKeeperTestSuite(t)
+	ctx := suite.ctx
+	keeper := suite.keeper
+	
+	// Create test tokenization records
+	records := []types.TokenizationRecord{
+		{
+			Id:              1,
+			Validator:       "floravaloper1validator1",
+			Owner:          "flora1owner1",
+			SharesTokenized: math.NewInt(1000000),
+			Denom:          "flora/lstake/floravaloper1validator1/1",
+		},
+		{
+			Id:              2,
+			Validator:       "floravaloper1validator2",
+			Owner:          "flora1owner2",
+			SharesTokenized: math.NewInt(2000000),
+			Denom:          "flora/lstake/floravaloper1validator2/2",
+		},
+		{
+			Id:              3,
+			Validator:       "floravaloper1validator1",
+			Owner:          "flora1owner3",
+			SharesTokenized: math.NewInt(3000000),
+			Denom:          "flora/lstake/floravaloper1validator1/3",
+		},
+	}
+	
+	// Create genesis state
+	genState := types.GenesisState{
+		Params: types.DefaultParams(),
+		TokenizationRecords: records,
+		LastTokenizationRecordId: 3,
+	}
+	
+	// Initialize genesis
+	keeper.InitGenesis(ctx, genState)
+	
+	// Test 1: Verify params were set
+	params := keeper.GetParams(ctx)
+	require.Equal(t, genState.Params, params)
+	
+	// Test 2: Verify last tokenization record ID
+	lastID := keeper.GetLastTokenizationRecordID(ctx)
+	require.Equal(t, uint64(3), lastID)
+	
+	// Test 3: Verify all records were stored
+	for _, expectedRecord := range records {
+		actualRecord, found := keeper.GetTokenizationRecord(ctx, expectedRecord.Id)
+		require.True(t, found)
+		require.Equal(t, expectedRecord, actualRecord)
+	}
+	
+	// Test 4: Verify indexes were created
+	// Check validator index
+	validator1Records := keeper.GetTokenizationRecordsByValidator(ctx, "floravaloper1validator1")
+	require.Len(t, validator1Records, 2)
+	
+	validator2Records := keeper.GetTokenizationRecordsByValidator(ctx, "floravaloper1validator2")
+	require.Len(t, validator2Records, 1)
+	
+	// Check owner index
+	owner1Records := keeper.GetTokenizationRecordsByOwner(ctx, "flora1owner1")
+	require.Len(t, owner1Records, 1)
+	require.Equal(t, uint64(1), owner1Records[0].Id)
+	
+	// Check denom index
+	record, found := keeper.GetTokenizationRecordByDenom(ctx, "flora/lstake/floravaloper1validator1/1")
+	require.True(t, found)
+	require.Equal(t, uint64(1), record.Id)
+	
+	// Test 5: Verify liquid staking counters
+	totalLiquidStaked := keeper.GetTotalLiquidStaked(ctx)
+	require.Equal(t, math.NewInt(6000000), totalLiquidStaked) // 1M + 2M + 3M
+	
+	validator1LiquidStaked := keeper.GetValidatorLiquidStaked(ctx, "floravaloper1validator1")
+	require.Equal(t, math.NewInt(4000000), validator1LiquidStaked) // 1M + 3M
+	
+	validator2LiquidStaked := keeper.GetValidatorLiquidStaked(ctx, "floravaloper1validator2")
+	require.Equal(t, math.NewInt(2000000), validator2LiquidStaked) // 2M
+	
+	// Test 6: Export genesis and verify it matches
+	exportedGenState := keeper.ExportGenesis(ctx)
+	require.Equal(t, genState.Params, exportedGenState.Params)
+	require.Equal(t, genState.LastTokenizationRecordId, exportedGenState.LastTokenizationRecordId)
+	require.Len(t, exportedGenState.TokenizationRecords, 3)
+	
+	// Verify exported records match (may be in different order)
+	recordMap := make(map[uint64]types.TokenizationRecord)
+	for _, record := range exportedGenState.TokenizationRecords {
+		recordMap[record.Id] = record
+	}
+	
+	for _, expectedRecord := range records {
+		actualRecord, found := recordMap[expectedRecord.Id]
+		require.True(t, found)
+		require.Equal(t, expectedRecord, actualRecord)
+	}
+}
+
+func TestGenesisWithEmptyState(t *testing.T) {
+	suite := setupKeeperTestSuite(t)
+	ctx := suite.ctx
+	keeper := suite.keeper
+	
+	// Create empty genesis state
+	genState := types.GenesisState{
+		Params: types.DefaultParams(),
+		TokenizationRecords: []types.TokenizationRecord{},
+		LastTokenizationRecordId: 0,
+	}
+	
+	// Initialize genesis
+	keeper.InitGenesis(ctx, genState)
+	
+	// Verify empty state
+	lastID := keeper.GetLastTokenizationRecordID(ctx)
+	require.Equal(t, uint64(0), lastID)
+	
+	allRecords := keeper.GetAllTokenizationRecords(ctx)
+	require.Len(t, allRecords, 0)
+	
+	totalLiquidStaked := keeper.GetTotalLiquidStaked(ctx)
+	require.Equal(t, math.ZeroInt(), totalLiquidStaked)
+	
+	// Export and verify
+	exportedGenState := keeper.ExportGenesis(ctx)
+	require.Equal(t, genState.Params, exportedGenState.Params)
+	require.Equal(t, uint64(0), exportedGenState.LastTokenizationRecordId)
+	require.Len(t, exportedGenState.TokenizationRecords, 0)
+}

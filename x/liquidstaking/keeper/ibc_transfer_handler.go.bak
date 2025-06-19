@@ -1,0 +1,401 @@
+package keeper
+
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+
+	"cosmossdk.io/math"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	transfertypes "github.com/cosmos/ibc-go/v8/modules/apps/transfer/types"
+	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
+	channeltypes "github.com/cosmos/ibc-go/v8/modules/core/04-channel/types"
+
+	"github.com/rollchains/flora/x/liquidstaking/types"
+)
+
+// IBCTransferHandler handles the transfer of liquid staking tokens via IBC
+type IBCTransferHandler struct {
+	keeper         Keeper
+	transferKeeper types.TransferKeeper
+	channelKeeper  types.ChannelKeeper
+}
+
+// NewIBCTransferHandler creates a new IBC transfer handler
+func NewIBCTransferHandler(k Keeper, tk types.TransferKeeper, ck types.ChannelKeeper) *IBCTransferHandler {
+	return &IBCTransferHandler{
+		keeper:         k,
+		transferKeeper: tk,
+		channelKeeper:  ck,
+	}
+}
+
+// SendLiquidStakingToken handles sending liquid staking tokens via IBC
+func (h *IBCTransferHandler) SendLiquidStakingToken(
+	ctx sdk.Context,
+	sourcePort,
+	sourceChannel string,
+	token sdk.Coin,
+	sender sdk.AccAddress,
+	receiver string,
+	timeoutHeight clienttypes.Height,
+	timeoutTimestamp uint64,
+	memo string,
+) error {
+	// Validate the transfer
+	if err := h.validateSend(ctx, sourcePort, sourceChannel, token, sender); err != nil {
+		return err
+	}
+
+	// Extract metadata if this is a liquid staking token
+	var metadata *types.LiquidStakingMetadata
+	if types.IsLiquidStakingTokenDenom(token.Denom) {
+		_, recordId, err := types.ParseLiquidStakingTokenDenom(token.Denom)
+		if err != nil {
+			return fmt.Errorf("failed to parse liquid staking token denom: %w", err)
+		}
+
+		record, found := h.keeper.GetTokenizationRecord(ctx, recordId)
+		if !found {
+			return fmt.Errorf("tokenization record not found: %d", recordId)
+		}
+
+		metadata = types.ExtractLiquidStakingMetadata(token.Denom, record)
+		if metadata != nil {
+			metadata.SourceChainId = ctx.ChainID()
+		}
+	}
+
+	// Create packet data with metadata
+	lstPacketData := types.NewLiquidStakingTokenPacketData(
+		token.Denom,
+		token.Amount.String(),
+		sender.String(),
+		receiver,
+		memo,
+		metadata,
+	)
+
+	// Convert to standard transfer packet for compatibility
+	transferPacketData := lstPacketData.ConvertToTransferPacket()
+
+	// Use the transfer keeper to send the packet
+	sequence, err := h.transferKeeper.SendTransfer(
+		ctx,
+		sourcePort,
+		sourceChannel,
+		token,
+		sender,
+		receiver,
+		timeoutHeight,
+		timeoutTimestamp,
+		transferPacketData.Memo,
+	)
+	if err != nil {
+		return err
+	}
+
+	// Emit additional event for liquid staking token transfer
+	if metadata != nil {
+		ctx.EventManager().EmitEvents(sdk.Events{
+			sdk.NewEvent(
+				types.EventTypeLiquidStakingIBCTransfer,
+				sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
+				sdk.NewAttribute(types.AttributeKeySender, sender.String()),
+				sdk.NewAttribute(types.AttributeKeyReceiver, receiver),
+				sdk.NewAttribute(types.AttributeKeyDenom, token.Denom),
+				sdk.NewAttribute(types.AttributeKeyAmount, token.Amount.String()),
+				sdk.NewAttribute(types.AttributeKeySourcePort, sourcePort),
+				sdk.NewAttribute(types.AttributeKeySourceChannel, sourceChannel),
+				sdk.NewAttribute("sequence", fmt.Sprintf("%d", sequence)),
+			),
+		})
+	}
+
+	return nil
+}
+
+// OnRecvLiquidStakingToken handles receiving liquid staking tokens via IBC
+func (h *IBCTransferHandler) OnRecvLiquidStakingToken(
+	ctx sdk.Context,
+	packet channeltypes.Packet,
+	data transfertypes.FungibleTokenPacketData,
+) error {
+	// Extract liquid staking metadata from packet
+	lstData, err := types.ExtractFromTransferPacket(data)
+	if err != nil {
+		return err
+	}
+
+	// If no metadata, handle as regular token
+	if lstData.LiquidStakingMetadata == nil {
+		return nil
+	}
+
+	// Parse amount
+	amount, ok := math.NewIntFromString(data.Amount)
+	if !ok {
+		return fmt.Errorf("invalid amount: %s", data.Amount)
+	}
+
+	// Get receiver address
+	receiver, err := sdk.AccAddressFromBech32(data.Receiver)
+	if err != nil {
+		return err
+	}
+
+	// Construct the IBC denom
+	sourcePrefix := transfertypes.GetDenomPrefix(packet.GetDestPort(), packet.GetDestChannel())
+	prefixedDenom := sourcePrefix + data.Denom
+	ibcDenom := transfertypes.ParseDenomTrace(prefixedDenom).IBCDenom()
+
+	// Create a local representation of the liquid staking token
+	if err := h.createLocalLSTRepresentation(ctx, ibcDenom, lstData.LiquidStakingMetadata); err != nil {
+		return err
+	}
+
+	// Mint the tokens to the receiver
+	coins := sdk.NewCoins(sdk.NewCoin(ibcDenom, amount))
+	if err := h.keeper.bankKeeper.MintCoins(ctx, types.ModuleName, coins); err != nil {
+		return err
+	}
+	if err := h.keeper.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, receiver, coins); err != nil {
+		return err
+	}
+
+	// Emit event
+	ctx.EventManager().EmitEvents(sdk.Events{
+		sdk.NewEvent(
+			types.EventTypeLiquidStakingIBCReceived,
+			sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
+			sdk.NewAttribute(types.AttributeKeyReceiver, receiver.String()),
+			sdk.NewAttribute(types.AttributeKeyDenom, ibcDenom),
+			sdk.NewAttribute(types.AttributeKeyAmount, amount.String()),
+			sdk.NewAttribute(types.AttributeKeySourceChainId, lstData.LiquidStakingMetadata.SourceChainId),
+			sdk.NewAttribute("original_validator", lstData.LiquidStakingMetadata.ValidatorAddress),
+			sdk.NewAttribute("original_record_id", fmt.Sprintf("%d", lstData.LiquidStakingMetadata.RecordId)),
+		),
+	})
+
+	return nil
+}
+
+// OnAcknowledgeLiquidStakingToken handles acknowledgement of liquid staking token transfers
+func (h *IBCTransferHandler) OnAcknowledgeLiquidStakingToken(
+	ctx sdk.Context,
+	packet channeltypes.Packet,
+	data transfertypes.FungibleTokenPacketData,
+	ack channeltypes.Acknowledgement,
+) error {
+	if !types.IsLiquidStakingTokenDenom(data.Denom) {
+		return nil
+	}
+
+	// Handle failed transfer
+	if !ack.Success() {
+		// Refund tokens to sender
+		sender, err := sdk.AccAddressFromBech32(data.Sender)
+		if err != nil {
+			return err
+		}
+
+		amount, ok := math.NewIntFromString(data.Amount)
+		if !ok {
+			return fmt.Errorf("invalid amount: %s", data.Amount)
+		}
+
+		// Return tokens to sender from escrow
+		escrowAddress := transfertypes.GetEscrowAddress(packet.GetSourcePort(), packet.GetSourceChannel())
+		coins := sdk.NewCoins(sdk.NewCoin(data.Denom, amount))
+		if err := h.keeper.bankKeeper.SendCoins(ctx, escrowAddress, sender, coins); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// OnTimeoutLiquidStakingToken handles timeout of liquid staking token transfers
+func (h *IBCTransferHandler) OnTimeoutLiquidStakingToken(
+	ctx sdk.Context,
+	packet channeltypes.Packet,
+	data transfertypes.FungibleTokenPacketData,
+) error {
+	if !types.IsLiquidStakingTokenDenom(data.Denom) {
+		return nil
+	}
+
+	// Refund tokens to sender
+	sender, err := sdk.AccAddressFromBech32(data.Sender)
+	if err != nil {
+		return err
+	}
+
+	amount, ok := math.NewIntFromString(data.Amount)
+	if !ok {
+		return fmt.Errorf("invalid amount: %s", data.Amount)
+	}
+
+	// Return tokens to sender from escrow
+	escrowAddress := transfertypes.GetEscrowAddress(packet.GetSourcePort(), packet.GetSourceChannel())
+	coins := sdk.NewCoins(sdk.NewCoin(data.Denom, amount))
+	if err := h.keeper.bankKeeper.SendCoins(ctx, escrowAddress, sender, coins); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// validateSend validates a liquid staking token send
+func (h *IBCTransferHandler) validateSend(
+	ctx sdk.Context,
+	sourcePort,
+	sourceChannel string,
+	token sdk.Coin,
+	sender sdk.AccAddress,
+) error {
+	// Check if module is enabled
+	params := h.keeper.GetParams(ctx)
+	if !params.Enabled {
+		return types.ErrDisabled
+	}
+
+	// Validate token amount
+	if !token.IsValid() || token.IsZero() {
+		return sdkerrors.ErrInvalidCoins.Wrap("invalid token amount")
+	}
+
+	// Check sender balance
+	balance := h.keeper.bankKeeper.GetBalance(ctx, sender, token.Denom)
+	if balance.IsLT(token) {
+		return sdkerrors.ErrInsufficientFunds
+	}
+
+	// Validate channel
+	channel, found := h.channelKeeper.GetChannel(ctx, sourcePort, sourceChannel)
+	if !found {
+		return fmt.Errorf("channel not found: %s/%s", sourcePort, sourceChannel)
+	}
+	if channel.State != channeltypes.OPEN {
+		return fmt.Errorf("channel is not open: %s", channel.State)
+	}
+
+	// Additional validation for liquid staking tokens
+	if types.IsLiquidStakingTokenDenom(token.Denom) {
+		_, recordId, err := types.ParseLiquidStakingTokenDenom(token.Denom)
+		if err != nil {
+			return err
+		}
+
+		_, found := h.keeper.GetTokenizationRecord(ctx, recordId)
+		if !found {
+			return fmt.Errorf("tokenization record not found: %d", recordId)
+		}
+
+		// TODO: Add Status field to TokenizationRecord proto
+		// if record.Status != types.TokenizationRecord_ACTIVE {
+		// 	return fmt.Errorf("cannot transfer redeemed liquid staking tokens")
+		// }
+	}
+
+	return nil
+}
+
+// createLocalLSTRepresentation creates a local representation of an incoming liquid staking token
+func (h *IBCTransferHandler) createLocalLSTRepresentation(
+	ctx sdk.Context,
+	ibcDenom string,
+	metadata *types.LiquidStakingMetadata,
+) error {
+	// Check if metadata already exists
+	if _, found := h.keeper.bankKeeper.GetDenomMetaData(ctx, ibcDenom); found {
+		// Metadata already exists, no need to create
+		return nil
+	}
+
+	// Create display denom
+	displayDenom := fmt.Sprintf("lst/%s", strings.TrimPrefix(metadata.ValidatorAddress, "cosmosvaloper"))
+	if len(displayDenom) > 20 {
+		displayDenom = displayDenom[:20]
+	}
+
+	// Create metadata for the IBC liquid staking token
+	denomMetadata := banktypes.Metadata{
+		Description: fmt.Sprintf("Liquid Staking Token from %s (Validator: %s, Record: %d)",
+			metadata.SourceChainId,
+			metadata.ValidatorAddress,
+			metadata.RecordId,
+		),
+		DenomUnits: []*banktypes.DenomUnit{
+			{
+				Denom:    ibcDenom,
+				Exponent: 0,
+				Aliases:  []string{},
+			},
+			{
+				Denom:    displayDenom,
+				Exponent: 6,
+				Aliases:  []string{},
+			},
+		},
+		Base:    ibcDenom,
+		Display: displayDenom,
+		Name:    fmt.Sprintf("Liquid Staked %s #%d", metadata.ValidatorAddress, metadata.RecordId),
+		Symbol:  "LST",
+		URI:     "",
+		URIHash: "",
+	}
+
+	// Set the metadata
+	h.keeper.bankKeeper.SetDenomMetaData(ctx, denomMetadata)
+
+	// Store additional metadata mapping for querying
+	// This allows us to look up the original liquid staking token info
+	metadataKey := []byte(fmt.Sprintf("ibc_lst_metadata_%s", ibcDenom))
+	metadataBytes, err := json.Marshal(metadata)
+	if err != nil {
+		return err
+	}
+	
+	store := h.keeper.storeService.OpenKVStore(ctx)
+	if err := store.Set(metadataKey, metadataBytes); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// GetIBCLiquidStakingMetadata retrieves the metadata for an IBC liquid staking token
+func (h *IBCTransferHandler) GetIBCLiquidStakingMetadata(ctx sdk.Context, ibcDenom string) (*types.LiquidStakingMetadata, error) {
+	metadataKey := []byte(fmt.Sprintf("ibc_lst_metadata_%s", ibcDenom))
+	
+	store := h.keeper.storeService.OpenKVStore(ctx)
+	bz, err := store.Get(metadataKey)
+	if err != nil {
+		return nil, err
+	}
+	if bz == nil {
+		return nil, fmt.Errorf("metadata not found for IBC denom: %s", ibcDenom)
+	}
+
+	var metadata types.LiquidStakingMetadata
+	if err := json.Unmarshal(bz, &metadata); err != nil {
+		return nil, err
+	}
+
+	return &metadata, nil
+}
+
+// IsIBCLiquidStakingToken checks if an IBC denom represents a liquid staking token
+func (h *IBCTransferHandler) IsIBCLiquidStakingToken(ctx sdk.Context, ibcDenom string) bool {
+	metadataKey := []byte(fmt.Sprintf("ibc_lst_metadata_%s", ibcDenom))
+	
+	store := h.keeper.storeService.OpenKVStore(ctx)
+	has, err := store.Has(metadataKey)
+	if err != nil {
+		return false
+	}
+	return has
+}

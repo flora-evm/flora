@@ -1,0 +1,521 @@
+package keeper_test
+
+import (
+	"encoding/json"
+	"fmt"
+	"testing"
+	"time"
+
+	"cosmossdk.io/math"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/stretchr/testify/require"
+	transfertypes "github.com/cosmos/ibc-go/v8/modules/apps/transfer/types"
+	channeltypes "github.com/cosmos/ibc-go/v8/modules/core/04-channel/types"
+
+	"github.com/rollchains/flora/x/liquidstaking/keeper"
+	"github.com/rollchains/flora/x/liquidstaking/types"
+)
+
+func TestOnSendPacket(t *testing.T) {
+	suite := setupTestSuite(t)
+	hooks := keeper.NewIBCHooks(suite.keeper)
+
+	sender := sdk.AccAddress("sender")
+	receiver := "cosmos1receiver"
+	sourcePort := "transfer"
+	sourceChannel := "channel-0"
+
+	// Create a tokenization record
+	record := types.TokenizationRecord{
+		Id:               1,
+		ValidatorAddress: "floravaloper1abc",
+		Owner:            sender.String(),
+		SharesDenomination: "shares/floravaloper1abc",
+		LiquidStakingTokenDenom: "liquidstake/floravaloper1abc/1",
+		SharesAmount:     math.LegacyNewDec(1000000),
+		Status:           types.TokenizationRecord_ACTIVE,
+		CreatedAt:        suite.ctx.BlockTime(),
+	}
+	suite.keeper.SetTokenizationRecord(suite.ctx, record)
+
+	testCases := []struct {
+		name      string
+		token     sdk.Coin
+		expectErr bool
+		errMsg    string
+	}{
+		{
+			name:      "valid liquid staking token",
+			token:     sdk.NewCoin("liquidstake/floravaloper1abc/1", math.NewInt(1000)),
+			expectErr: false,
+		},
+		{
+			name:      "regular token",
+			token:     sdk.NewCoin("flora", math.NewInt(1000)),
+			expectErr: false,
+		},
+		{
+			name:      "invalid liquid staking token format",
+			token:     sdk.NewCoin("liquidstake/invalid", math.NewInt(1000)),
+			expectErr: true,
+			errMsg:    "failed to parse liquid staking token denom",
+		},
+		{
+			name:      "non-existent record",
+			token:     sdk.NewCoin("liquidstake/floravaloper1abc/999", math.NewInt(1000)),
+			expectErr: true,
+			errMsg:    "tokenization record not found",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := hooks.OnSendPacket(
+				suite.ctx,
+				sourcePort,
+				sourceChannel,
+				tc.token,
+				sender,
+				receiver,
+				"",
+				nil,
+			)
+
+			if tc.expectErr {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tc.errMsg)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+
+	// Test with redeemed token
+	t.Run("redeemed token", func(t *testing.T) {
+		redeemedRecord := record
+		redeemedRecord.Id = 2
+		redeemedRecord.Status = types.TokenizationRecord_REDEEMED
+		redeemedRecord.LiquidStakingTokenDenom = "liquidstake/floravaloper1abc/2"
+		suite.keeper.SetTokenizationRecord(suite.ctx, redeemedRecord)
+
+		err := hooks.OnSendPacket(
+			suite.ctx,
+			sourcePort,
+			sourceChannel,
+			sdk.NewCoin("liquidstake/floravaloper1abc/2", math.NewInt(1000)),
+			sender,
+			receiver,
+			"",
+			nil,
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "cannot transfer redeemed liquid staking tokens")
+	})
+}
+
+func TestOnRecvPacket(t *testing.T) {
+	suite := setupTestSuite(t)
+	hooks := keeper.NewIBCHooks(suite.keeper)
+
+	receiver := sdk.AccAddress("receiver")
+	
+	// Create liquid staking metadata
+	metadata := &types.LiquidStakingMetadata{
+		ValidatorAddress: "cosmosvaloper1abc",
+		RecordId:         1,
+		SharesAmount:     math.LegacyNewDec(1000000),
+		SourceChainId:    "cosmos-hub-4",
+		CreatedAt:        time.Now().UTC().Format(time.RFC3339),
+	}
+
+	// Create packet data with metadata in memo
+	memoData := map[string]interface{}{
+		"liquid_staking_metadata": metadata,
+	}
+	memoJSON, _ := json.Marshal(memoData)
+
+	packetData := transfertypes.FungibleTokenPacketData{
+		Denom:    "liquidstake/cosmosvaloper1abc/1",
+		Amount:   "1000000",
+		Sender:   "cosmos1sender",
+		Receiver: receiver.String(),
+		Memo:     string(memoJSON),
+	}
+
+	packetDataBytes, _ := json.Marshal(packetData)
+
+	packet := channeltypes.Packet{
+		Sequence:           1,
+		SourcePort:         "transfer",
+		SourceChannel:      "channel-0",
+		DestinationPort:    "transfer",
+		DestinationChannel: "channel-1",
+		Data:               packetDataBytes,
+		TimeoutHeight:      channeltypes.Height{},
+		TimeoutTimestamp:   0,
+	}
+
+	testCases := []struct {
+		name      string
+		packet    channeltypes.Packet
+		expectErr bool
+	}{
+		{
+			name:      "valid liquid staking packet",
+			packet:    packet,
+			expectErr: false,
+		},
+		{
+			name: "packet without metadata",
+			packet: channeltypes.Packet{
+				Sequence:           2,
+				SourcePort:         "transfer",
+				SourceChannel:      "channel-0",
+				DestinationPort:    "transfer",
+				DestinationChannel: "channel-1",
+				Data: func() []byte {
+					data := transfertypes.FungibleTokenPacketData{
+						Denom:    "uatom",
+						Amount:   "1000000",
+						Sender:   "cosmos1sender",
+						Receiver: receiver.String(),
+						Memo:     "",
+					}
+					bz, _ := json.Marshal(data)
+					return bz
+				}(),
+			},
+			expectErr: false,
+		},
+		{
+			name: "invalid packet data",
+			packet: channeltypes.Packet{
+				Data: []byte("invalid json"),
+			},
+			expectErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Create a mock acknowledgement
+			ack := channeltypes.NewResultAcknowledgement([]byte("success"))
+			
+			err := hooks.OnRecvPacket(suite.ctx, tc.packet, ack, nil)
+			
+			if tc.expectErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestOnAcknowledgementPacket(t *testing.T) {
+	suite := setupTestSuite(t)
+	hooks := keeper.NewIBCHooks(suite.keeper)
+
+	// Create packet data for liquid staking token
+	packetData := transfertypes.FungibleTokenPacketData{
+		Denom:    "liquidstake/floravaloper1abc/1",
+		Amount:   "1000000",
+		Sender:   "flora1sender",
+		Receiver: "cosmos1receiver",
+		Memo:     "",
+	}
+	packetDataBytes, _ := json.Marshal(packetData)
+
+	packet := channeltypes.Packet{
+		Sequence:           1,
+		SourcePort:         "transfer",
+		SourceChannel:      "channel-0",
+		DestinationPort:    "transfer",
+		DestinationChannel: "channel-1",
+		Data:               packetDataBytes,
+	}
+
+	testCases := []struct {
+		name           string
+		packet         channeltypes.Packet
+		ack            []byte
+		expectErr      bool
+		expectEventType string
+	}{
+		{
+			name:   "successful acknowledgement",
+			packet: packet,
+			ack: func() []byte {
+				ack := channeltypes.NewResultAcknowledgement([]byte("success"))
+				bz, _ := json.Marshal(ack)
+				return bz
+			}(),
+			expectErr:      false,
+			expectEventType: types.EventTypeLiquidStakingIBCAck,
+		},
+		{
+			name:   "error acknowledgement",
+			packet: packet,
+			ack: func() []byte {
+				ack := channeltypes.NewErrorAcknowledgement(fmt.Errorf("transfer failed"))
+				bz, _ := json.Marshal(ack)
+				return bz
+			}(),
+			expectErr:      false,
+			expectEventType: types.EventTypeLiquidStakingIBCTimeout,
+		},
+		{
+			name: "non-liquid staking token",
+			packet: channeltypes.Packet{
+				Data: func() []byte {
+					data := transfertypes.FungibleTokenPacketData{
+						Denom:    "flora",
+						Amount:   "1000000",
+						Sender:   "flora1sender",
+						Receiver: "cosmos1receiver",
+					}
+					bz, _ := json.Marshal(data)
+					return bz
+				}(),
+			},
+			ack: func() []byte {
+				ack := channeltypes.NewResultAcknowledgement([]byte("success"))
+				bz, _ := json.Marshal(ack)
+				return bz
+			}(),
+			expectErr: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Clear events
+			suite.ctx = suite.ctx.WithEventManager(sdk.NewEventManager())
+			
+			err := hooks.OnAcknowledgementPacket(suite.ctx, tc.packet, tc.ack, nil)
+			
+			if tc.expectErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				
+				// Check events if expected
+				if tc.expectEventType != "" {
+					events := suite.ctx.EventManager().Events()
+					found := false
+					for _, event := range events {
+						if event.Type == tc.expectEventType {
+							found = true
+							break
+						}
+					}
+					require.True(t, found, "expected event type %s not found", tc.expectEventType)
+				}
+			}
+		})
+	}
+}
+
+func TestOnTimeoutPacket(t *testing.T) {
+	suite := setupTestSuite(t)
+	hooks := keeper.NewIBCHooks(suite.keeper)
+
+	// Create packet data for liquid staking token
+	packetData := transfertypes.FungibleTokenPacketData{
+		Denom:    "liquidstake/floravaloper1abc/1",
+		Amount:   "1000000",
+		Sender:   "flora1sender",
+		Receiver: "cosmos1receiver",
+		Memo:     "",
+	}
+	packetDataBytes, _ := json.Marshal(packetData)
+
+	packet := channeltypes.Packet{
+		Sequence:           1,
+		SourcePort:         "transfer",
+		SourceChannel:      "channel-0",
+		DestinationPort:    "transfer",
+		DestinationChannel: "channel-1",
+		Data:               packetDataBytes,
+	}
+
+	// Clear events
+	suite.ctx = suite.ctx.WithEventManager(sdk.NewEventManager())
+
+	// Test timeout handling
+	err := hooks.OnTimeoutPacket(suite.ctx, packet, nil)
+	require.NoError(t, err)
+
+	// Check timeout event was emitted
+	events := suite.ctx.EventManager().Events()
+	found := false
+	for _, event := range events {
+		if event.Type == types.EventTypeLiquidStakingIBCTimeout {
+			found = true
+			// Verify attributes
+			for _, attr := range event.Attributes {
+				switch attr.Key {
+				case types.AttributeKeySender:
+					require.Equal(t, "flora1sender", attr.Value)
+				case types.AttributeKeyDenom:
+					require.Equal(t, "liquidstake/floravaloper1abc/1", attr.Value)
+				case types.AttributeKeyAmount:
+					require.Equal(t, "1000000", attr.Value)
+				}
+			}
+			break
+		}
+	}
+	require.True(t, found, "timeout event not found")
+
+	// Test with non-liquid staking token
+	regularPacketData := transfertypes.FungibleTokenPacketData{
+		Denom:    "flora",
+		Amount:   "1000000",
+		Sender:   "flora1sender",
+		Receiver: "cosmos1receiver",
+	}
+	regularPacketDataBytes, _ := json.Marshal(regularPacketData)
+	regularPacket := packet
+	regularPacket.Data = regularPacketDataBytes
+
+	suite.ctx = suite.ctx.WithEventManager(sdk.NewEventManager())
+	err = hooks.OnTimeoutPacket(suite.ctx, regularPacket, nil)
+	require.NoError(t, err)
+
+	// Should not emit liquid staking timeout event
+	events = suite.ctx.EventManager().Events()
+	for _, event := range events {
+		require.NotEqual(t, types.EventTypeLiquidStakingIBCTimeout, event.Type)
+	}
+}
+
+func TestValidateLiquidStakingIBCTransfer(t *testing.T) {
+	suite := setupTestSuite(t)
+	hooks := keeper.NewIBCHooks(suite.keeper)
+
+	sender := sdk.AccAddress("sender")
+	sourcePort := "transfer"
+	sourceChannel := "channel-0"
+
+	testCases := []struct {
+		name      string
+		enabled   bool
+		denom     string
+		amount    math.Int
+		expectErr bool
+	}{
+		{
+			name:      "valid transfer with module enabled",
+			enabled:   true,
+			denom:     "liquidstake/floravaloper1abc/1",
+			amount:    math.NewInt(1000000),
+			expectErr: false,
+		},
+		{
+			name:      "transfer with module disabled",
+			enabled:   false,
+			denom:     "liquidstake/floravaloper1abc/1",
+			amount:    math.NewInt(1000000),
+			expectErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Update params
+			params := suite.keeper.GetParams(suite.ctx)
+			params.Enabled = tc.enabled
+			err := suite.keeper.SetParams(suite.ctx, params)
+			require.NoError(t, err)
+
+			err = hooks.ValidateLiquidStakingIBCTransfer(
+				suite.ctx,
+				sourcePort,
+				sourceChannel,
+				tc.denom,
+				tc.amount,
+				sender,
+			)
+
+			if tc.expectErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestIsLiquidStakingEnabledChannel(t *testing.T) {
+	suite := setupTestSuite(t)
+	hooks := keeper.NewIBCHooks(suite.keeper)
+
+	// Currently returns true for all channels
+	require.True(t, hooks.IsLiquidStakingEnabledChannel(suite.ctx, "transfer", "channel-0"))
+	require.True(t, hooks.IsLiquidStakingEnabledChannel(suite.ctx, "transfer", "channel-999"))
+}
+
+func TestGetLiquidStakingTokenMetadata(t *testing.T) {
+	suite := setupTestSuite(t)
+	hooks := keeper.NewIBCHooks(suite.keeper)
+
+	// Create a tokenization record
+	record := types.TokenizationRecord{
+		Id:               1,
+		ValidatorAddress: "floravaloper1abc",
+		Owner:            "flora1xyz",
+		SharesDenomination: "shares/floravaloper1abc",
+		LiquidStakingTokenDenom: "liquidstake/floravaloper1abc/1",
+		SharesAmount:     math.LegacyNewDec(1000000),
+		Status:           types.TokenizationRecord_ACTIVE,
+		CreatedAt:        suite.ctx.BlockTime(),
+	}
+	suite.keeper.SetTokenizationRecord(suite.ctx, record)
+
+	testCases := []struct {
+		name      string
+		denom     string
+		expectErr bool
+	}{
+		{
+			name:      "valid liquid staking token",
+			denom:     "liquidstake/floravaloper1abc/1",
+			expectErr: false,
+		},
+		{
+			name:      "non-liquid staking token",
+			denom:     "flora",
+			expectErr: true,
+		},
+		{
+			name:      "invalid liquid staking format",
+			denom:     "liquidstake/invalid",
+			expectErr: true,
+		},
+		{
+			name:      "non-existent record",
+			denom:     "liquidstake/floravaloper1abc/999",
+			expectErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			metadata, err := hooks.GetLiquidStakingTokenMetadata(suite.ctx, tc.denom)
+
+			if tc.expectErr {
+				require.Error(t, err)
+				require.Nil(t, metadata)
+			} else {
+				require.NoError(t, err)
+				require.NotNil(t, metadata)
+				require.Equal(t, record.ValidatorAddress, metadata.ValidatorAddress)
+				require.Equal(t, record.Id, metadata.RecordId)
+				require.Equal(t, record.SharesAmount, metadata.SharesAmount)
+				require.Equal(t, suite.ctx.ChainID(), metadata.SourceChainId)
+				require.NotEmpty(t, metadata.CreatedAt)
+			}
+		})
+	}
+}

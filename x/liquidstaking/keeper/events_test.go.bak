@@ -1,0 +1,361 @@
+package keeper_test
+
+import (
+	"fmt"
+	"testing"
+
+	"cosmossdk.io/math"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/stretchr/testify/require"
+
+	"github.com/rollchains/flora/x/liquidstaking/keeper"
+	"github.com/rollchains/flora/x/liquidstaking/types"
+)
+
+func TestTokenizeSharesEvents(t *testing.T) {
+	// Setup test environment
+	testKit := SetupTestSuite(t)
+	ctx := testKit.ctx
+	msgServer := keeper.NewMsgServerImpl(testKit.keeper)
+
+	// Create test data
+	delegator := testKit.createAccount(t, "delegator")
+	validator := testKit.addValidator(t)
+	owner := testKit.createAccount(t, "owner")
+
+	// Fund and delegate
+	amount := sdk.NewCoin("flora", math.NewInt(1000000))
+	testKit.fundAccount(t, delegator, amount)
+	testKit.delegate(t, delegator, validator.OperatorAddress, amount.Amount)
+
+	// Create tokenize shares message
+	msg := &types.MsgTokenizeShares{
+		DelegatorAddress: delegator.String(),
+		ValidatorAddress: validator.OperatorAddress,
+		OwnerAddress:     owner.String(),
+		Shares:           sdk.NewDecCoinFromDec("flora", math.LegacyNewDec(500000)),
+	}
+
+	// Execute tokenize shares
+	res, err := msgServer.TokenizeShares(ctx, msg)
+	require.NoError(t, err)
+
+	// Check events
+	events := ctx.EventManager().Events()
+	
+	// Find tokenize_shares event
+	tokenizeEvent := findEvent(events, types.EventTypeTokenizeShares)
+	require.NotNil(t, tokenizeEvent, "tokenize_shares event not found")
+
+	// Verify event attributes
+	assertEventAttribute(t, tokenizeEvent, types.AttributeKeyDelegator, delegator.String())
+	assertEventAttribute(t, tokenizeEvent, types.AttributeKeyValidator, validator.OperatorAddress)
+	assertEventAttribute(t, tokenizeEvent, types.AttributeKeyOwner, owner.String())
+	assertEventAttribute(t, tokenizeEvent, types.AttributeKeyShares, "500000")
+	assertEventAttribute(t, tokenizeEvent, types.AttributeKeyTokensMinted, res.Amount.Amount.String())
+	assertEventAttribute(t, tokenizeEvent, types.AttributeKeyDenom, res.Denom)
+	assertEventAttribute(t, tokenizeEvent, types.AttributeKeyRecordID, fmt.Sprintf("%d", res.RecordId))
+
+	// Find record created event
+	recordCreatedEvent := findEvent(events, types.EventTypeRecordCreated)
+	require.NotNil(t, recordCreatedEvent, "tokenization_record_created event not found")
+
+	// Verify record created attributes
+	assertEventAttribute(t, recordCreatedEvent, types.AttributeKeyRecordID, fmt.Sprintf("%d", res.RecordId))
+	assertEventAttribute(t, recordCreatedEvent, types.AttributeKeyValidator, validator.OperatorAddress)
+	assertEventAttribute(t, recordCreatedEvent, types.AttributeKeyOwner, owner.String())
+	assertEventAttribute(t, recordCreatedEvent, types.AttributeKeySharesTokenized, res.Amount.Amount.String())
+	assertEventAttribute(t, recordCreatedEvent, types.AttributeKeyDenom, res.Denom)
+	assertEventAttribute(t, recordCreatedEvent, types.AttributeKeyAction, types.AttributeValueActionCreate)
+
+	// Find message event
+	messageEvent := findEvent(events, sdk.EventTypeMessage)
+	require.NotNil(t, messageEvent, "message event not found")
+	assertEventAttribute(t, messageEvent, sdk.AttributeKeyModule, types.ModuleName)
+	assertEventAttribute(t, messageEvent, sdk.AttributeKeySender, delegator.String())
+	assertEventAttribute(t, messageEvent, sdk.AttributeKeyAction, types.AttributeValueActionTokenize)
+}
+
+func TestRedeemTokensEvents(t *testing.T) {
+	// Setup test environment
+	testKit := SetupTestSuite(t)
+	ctx := testKit.ctx
+	msgServer := keeper.NewMsgServerImpl(testKit.keeper)
+
+	// Create test data
+	delegator := testKit.createAccount(t, "delegator")
+	validator := testKit.addValidator(t)
+	owner := testKit.createAccount(t, "owner")
+
+	// Fund and delegate
+	amount := sdk.NewCoin("flora", math.NewInt(1000000))
+	testKit.fundAccount(t, delegator, amount)
+	testKit.delegate(t, delegator, validator.OperatorAddress, amount.Amount)
+
+	// First tokenize shares
+	tokenizeMsg := &types.MsgTokenizeShares{
+		DelegatorAddress: delegator.String(),
+		ValidatorAddress: validator.OperatorAddress,
+		OwnerAddress:     owner.String(),
+		Shares:           sdk.NewDecCoinFromDec("flora", math.LegacyNewDec(1000000)),
+	}
+	tokenizeRes, err := msgServer.TokenizeShares(ctx, tokenizeMsg)
+	require.NoError(t, err)
+
+	// Clear events from tokenization
+	ctx = ctx.WithEventManager(sdk.NewEventManager())
+
+	// Test partial redemption
+	redeemAmount := sdk.NewCoin(tokenizeRes.Denom, math.NewInt(300000))
+	redeemMsg := &types.MsgRedeemTokens{
+		OwnerAddress: owner.String(),
+		Amount:       redeemAmount,
+	}
+
+	res, err := msgServer.RedeemTokens(ctx, redeemMsg)
+	require.NoError(t, err)
+
+	// Check events
+	events := ctx.EventManager().Events()
+
+	// Find redeem_tokens event
+	redeemEvent := findEvent(events, types.EventTypeRedeemTokens)
+	require.NotNil(t, redeemEvent, "redeem_tokens event not found")
+
+	// Verify event attributes
+	assertEventAttribute(t, redeemEvent, types.AttributeKeyOwner, owner.String())
+	assertEventAttribute(t, redeemEvent, types.AttributeKeyValidator, validator.OperatorAddress)
+	assertEventAttribute(t, redeemEvent, types.AttributeKeyTokensBurned, redeemAmount.Amount.String())
+	assertEventAttribute(t, redeemEvent, types.AttributeKeySharesRestored, res.Shares.String())
+	assertEventAttribute(t, redeemEvent, types.AttributeKeyDenom, redeemAmount.Denom)
+	assertEventAttribute(t, redeemEvent, types.AttributeKeyRecordID, fmt.Sprintf("%d", res.RecordId))
+
+	// Find record updated event (partial redemption)
+	recordUpdatedEvent := findEvent(events, types.EventTypeRecordUpdated)
+	require.NotNil(t, recordUpdatedEvent, "tokenization_record_updated event not found")
+	assertEventAttribute(t, recordUpdatedEvent, types.AttributeKeyRecordID, fmt.Sprintf("%d", res.RecordId))
+	assertEventAttribute(t, recordUpdatedEvent, types.AttributeKeyAction, types.AttributeValueActionUpdate)
+
+	// Test full redemption
+	ctx = ctx.WithEventManager(sdk.NewEventManager())
+	
+	// Get remaining balance
+	remainingBalance := testKit.bankKeeper.GetBalance(ctx, owner, tokenizeRes.Denom)
+	fullRedeemMsg := &types.MsgRedeemTokens{
+		OwnerAddress: owner.String(),
+		Amount:       remainingBalance,
+	}
+
+	_, err = msgServer.RedeemTokens(ctx, fullRedeemMsg)
+	require.NoError(t, err)
+
+	// Check events for full redemption
+	events = ctx.EventManager().Events()
+
+	// Find record deleted event (full redemption)
+	recordDeletedEvent := findEvent(events, types.EventTypeRecordDeleted)
+	require.NotNil(t, recordDeletedEvent, "tokenization_record_deleted event not found")
+	assertEventAttribute(t, recordDeletedEvent, types.AttributeKeyRecordID, fmt.Sprintf("%d", tokenizeRes.RecordId))
+	assertEventAttribute(t, recordDeletedEvent, types.AttributeKeyValidator, validator.OperatorAddress)
+	assertEventAttribute(t, recordDeletedEvent, types.AttributeKeyOwner, owner.String())
+	assertEventAttribute(t, recordDeletedEvent, types.AttributeKeyDenom, tokenizeRes.Denom)
+	assertEventAttribute(t, recordDeletedEvent, types.AttributeKeyAction, types.AttributeValueActionDelete)
+}
+
+func TestUpdateParamsEvents(t *testing.T) {
+	// Setup test environment
+	testKit := SetupTestSuite(t)
+	ctx := testKit.ctx
+
+	// Get current params
+	oldParams := testKit.keeper.GetParams(ctx)
+
+	// Create new params with changes
+	newParams := types.ModuleParams{
+		Enabled:                !oldParams.Enabled,
+		MinLiquidStakeAmount:   oldParams.MinLiquidStakeAmount.Add(math.NewInt(1000)),
+		GlobalLiquidStakingCap: oldParams.GlobalLiquidStakingCap.Add(math.LegacyOneDec()),
+		ValidatorLiquidCap:     oldParams.ValidatorLiquidCap.Sub(math.LegacyNewDecWithPrec(5, 2)),
+	}
+
+	// Update params
+	err := testKit.keeper.SetParams(ctx, newParams)
+	require.NoError(t, err)
+
+	// Check events
+	events := ctx.EventManager().Events()
+
+	// Find update_params event
+	updateEvent := findEvent(events, types.EventTypeUpdateParams)
+	require.NotNil(t, updateEvent, "update_params event not found")
+
+	// Verify authority attribute
+	assertEventAttribute(t, updateEvent, types.AttributeKeySender, "governance")
+	assertEventAttribute(t, updateEvent, types.AttributeKeyAction, types.AttributeValueActionUpdate)
+
+	// Verify parameter changes are recorded
+	// The event should have multiple change_X_param_key attributes
+	attrs := updateEvent.Attributes
+	changeCount := 0
+	for _, attr := range attrs {
+		if len(attr.Key) > 7 && attr.Key[:7] == "change_" {
+			changeCount++
+		}
+	}
+	// We changed 4 parameters, so there should be 12 change attributes (3 per change)
+	require.Equal(t, 12, changeCount, "expected 12 change attributes (3 per parameter)")
+}
+
+func TestLiquidStakingCapEvents(t *testing.T) {
+	// Setup test environment
+	testKit := SetupTestSuite(t)
+	ctx := testKit.ctx
+	msgServer := keeper.NewMsgServerImpl(testKit.keeper)
+
+	// Set low caps to trigger cap events
+	params := testKit.keeper.GetParams(ctx)
+	params.GlobalLiquidStakingCap = math.LegacyNewDecWithPrec(20, 2) // 20%
+	params.ValidatorLiquidCap = math.LegacyNewDecWithPrec(10, 2)    // 10%
+	err := testKit.keeper.SetParams(ctx, params)
+	require.NoError(t, err)
+
+	// Create test data
+	delegator := testKit.createAccount(t, "delegator")
+	validator := testKit.addValidator(t)
+
+	// Fund and delegate a large amount
+	amount := sdk.NewCoin("flora", math.NewInt(10000000))
+	testKit.fundAccount(t, delegator, amount)
+	testKit.delegate(t, delegator, validator.OperatorAddress, amount.Amount)
+
+	// Clear param update events
+	ctx = ctx.WithEventManager(sdk.NewEventManager())
+
+	// Tokenize shares approaching validator cap
+	msg := &types.MsgTokenizeShares{
+		DelegatorAddress: delegator.String(),
+		ValidatorAddress: validator.OperatorAddress,
+		Shares:           sdk.NewDecCoinFromDec("flora", math.LegacyNewDec(900000)), // Should be close to 10% cap
+	}
+
+	_, err = msgServer.TokenizeShares(ctx, msg)
+	require.NoError(t, err)
+
+	// Check if cap warning events would be emitted
+	// Note: The actual cap event emission would depend on the implementation
+	// checking if liquid staking approaches or exceeds caps
+}
+
+func TestEventOrderDuringComplexOperations(t *testing.T) {
+	// Setup test environment
+	testKit := SetupTestSuite(t)
+	ctx := testKit.ctx
+	msgServer := keeper.NewMsgServerImpl(testKit.keeper)
+
+	// Create test data
+	delegator := testKit.createAccount(t, "delegator")
+	validator := testKit.addValidator(t)
+
+	// Fund and delegate
+	amount := sdk.NewCoin("flora", math.NewInt(1000000))
+	testKit.fundAccount(t, delegator, amount)
+	testKit.delegate(t, delegator, validator.OperatorAddress, amount.Amount)
+
+	// Tokenize shares
+	tokenizeMsg := &types.MsgTokenizeShares{
+		DelegatorAddress: delegator.String(),
+		ValidatorAddress: validator.OperatorAddress,
+		Shares:           sdk.NewDecCoinFromDec("flora", math.LegacyNewDec(1000000)),
+	}
+	tokenizeRes, err := msgServer.TokenizeShares(ctx, tokenizeMsg)
+	require.NoError(t, err)
+
+	// Check event order for tokenization
+	events := ctx.EventManager().Events()
+	
+	// Expected order: tokenize_shares, record_created, message
+	eventTypes := []string{}
+	for _, event := range events {
+		eventTypes = append(eventTypes, event.Type)
+	}
+
+	// Verify critical events are present
+	require.Contains(t, eventTypes, types.EventTypeTokenizeShares)
+	require.Contains(t, eventTypes, types.EventTypeRecordCreated)
+	require.Contains(t, eventTypes, sdk.EventTypeMessage)
+
+	// Clear events
+	ctx = ctx.WithEventManager(sdk.NewEventManager())
+
+	// Full redemption
+	redeemMsg := &types.MsgRedeemTokens{
+		OwnerAddress: delegator.String(),
+		Amount:       tokenizeRes.Amount,
+	}
+	_, err = msgServer.RedeemTokens(ctx, redeemMsg)
+	require.NoError(t, err)
+
+	// Check event order for redemption
+	events = ctx.EventManager().Events()
+	eventTypes = []string{}
+	for _, event := range events {
+		eventTypes = append(eventTypes, event.Type)
+	}
+
+	// Verify critical events are present
+	require.Contains(t, eventTypes, types.EventTypeRedeemTokens)
+	require.Contains(t, eventTypes, types.EventTypeRecordDeleted)
+	require.Contains(t, eventTypes, sdk.EventTypeMessage)
+}
+
+func TestFailedOperationNoEvents(t *testing.T) {
+	// Setup test environment
+	testKit := SetupTestSuite(t)
+	ctx := testKit.ctx
+	msgServer := keeper.NewMsgServerImpl(testKit.keeper)
+
+	// Create test data
+	delegator := testKit.createAccount(t, "delegator")
+	validator := testKit.addValidator(t)
+
+	// Try to tokenize without delegation
+	msg := &types.MsgTokenizeShares{
+		DelegatorAddress: delegator.String(),
+		ValidatorAddress: validator.OperatorAddress,
+		Shares:           sdk.NewDecCoinFromDec("flora", math.LegacyNewDec(1000000)),
+	}
+
+	_, err := msgServer.TokenizeShares(ctx, msg)
+	require.Error(t, err)
+
+	// Check that no events were emitted
+	events := ctx.EventManager().Events()
+	
+	// There should be no liquidstaking module events when operation fails
+	for _, event := range events {
+		require.NotEqual(t, types.EventTypeTokenizeShares, event.Type)
+		require.NotEqual(t, types.EventTypeRecordCreated, event.Type)
+	}
+}
+
+// Helper functions
+
+func findEvent(events sdk.Events, eventType string) *sdk.Event {
+	for i := range events {
+		if events[i].Type == eventType {
+			return &events[i]
+		}
+	}
+	return nil
+}
+
+func assertEventAttribute(t *testing.T, event *sdk.Event, key, expectedValue string) {
+	for _, attr := range event.Attributes {
+		if attr.Key == key {
+			require.Equal(t, expectedValue, attr.Value,
+				"event %s attribute %s mismatch", event.Type, key)
+			return
+		}
+	}
+	t.Errorf("attribute %s not found in event %s", key, event.Type)
+}

@@ -1,6 +1,7 @@
 package liquidstaking
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -14,6 +15,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
 
+	"github.com/rollchains/flora/x/liquidstaking/client/cli"
 	"github.com/rollchains/flora/x/liquidstaking/keeper"
 	"github.com/rollchains/flora/x/liquidstaking/types"
 )
@@ -53,22 +55,19 @@ func (AppModuleBasic) ValidateGenesis(cdc codec.JSONCodec, _ client.TxEncodingCo
 
 // RegisterGRPCGatewayRoutes registers the gRPC Gateway routes for the liquid staking module.
 func (AppModuleBasic) RegisterGRPCGatewayRoutes(clientCtx client.Context, mux *runtime.ServeMux) {
-	// Will be implemented when query service is registered
-	// if err := types.RegisterQueryHandlerClient(context.Background(), mux, types.NewQueryClient(clientCtx)); err != nil {
-	// 	panic(err)
-	// }
+	if err := types.RegisterQueryHandlerClient(context.Background(), mux, types.NewQueryClient(clientCtx)); err != nil {
+		panic(err)
+	}
 }
 
 // GetTxCmd returns the root tx command for the liquid staking module.
 func (AppModuleBasic) GetTxCmd() *cobra.Command {
-	// Will be implemented in later stages
-	return nil
+	return cli.GetTxCmd()
 }
 
 // GetQueryCmd returns the root query command for the liquid staking module.
 func (AppModuleBasic) GetQueryCmd() *cobra.Command {
-	// Will be implemented in later stages
-	return nil
+	return cli.GetQueryCmd(types.StoreKey)
 }
 
 // RegisterInterfaces registers interfaces and implementations of the liquid staking module.
@@ -89,6 +88,12 @@ func NewAppModule(keeper keeper.Keeper) AppModule {
 		AppModuleBasic: AppModuleBasic{},
 		keeper:         keeper,
 	}
+}
+
+// SetHooks sets the liquid staking hooks
+// This should be called during app initialization after all modules are created
+func (am AppModule) SetHooks(hooks types.LiquidStakingHooks) {
+	am.keeper.SetHooks(hooks)
 }
 
 // RegisterServices registers module services.
@@ -112,6 +117,12 @@ func (am AppModule) ExportGenesis(ctx sdk.Context, cdc codec.JSONCodec) json.Raw
 
 // ConsensusVersion implements AppModule/ConsensusVersion.
 func (AppModule) ConsensusVersion() uint64 { return 1 }
+
+// BeginBlock performs a no-op.
+func (am AppModule) BeginBlock(ctx context.Context) error {
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+	return am.keeper.BeginBlocker(sdkCtx)
+}
 
 // IsOnePerModuleType implements the depinject.OnePerModuleType interface.
 func (am AppModule) IsOnePerModuleType() {}

@@ -1,0 +1,108 @@
+package keeper
+
+import (
+	"context"
+	"fmt"
+
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	
+	"github.com/rollchains/flora/x/liquidstaking/types"
+)
+
+// EmergencyPause implements types.MsgServer
+func (k msgServer) EmergencyPause(goCtx context.Context, msg *types.MsgEmergencyPause) (*types.MsgEmergencyPauseResponse, error) {
+	ctx := sdk.UnwrapSDKContext(goCtx)
+	
+	// Validate the message
+	if err := msg.ValidateBasic(); err != nil {
+		return nil, err
+	}
+	
+	// Execute emergency pause
+	if err := k.Keeper.EmergencyPause(ctx, msg.Authority, msg.Reason, msg.Duration); err != nil {
+		return nil, err
+	}
+	
+	return &types.MsgEmergencyPauseResponse{}, nil
+}
+
+// EmergencyUnpause implements types.MsgServer
+func (k msgServer) EmergencyUnpause(goCtx context.Context, msg *types.MsgEmergencyUnpause) (*types.MsgEmergencyUnpauseResponse, error) {
+	ctx := sdk.UnwrapSDKContext(goCtx)
+	
+	// Validate the message
+	if err := msg.ValidateBasic(); err != nil {
+		return nil, err
+	}
+	
+	// Execute emergency unpause
+	if err := k.Keeper.EmergencyUnpause(ctx, msg.Authority); err != nil {
+		return nil, err
+	}
+	
+	return &types.MsgEmergencyUnpauseResponse{}, nil
+}
+
+// SetValidatorWhitelist implements types.MsgServer
+func (k msgServer) SetValidatorWhitelist(goCtx context.Context, msg *types.MsgSetValidatorWhitelist) (*types.MsgSetValidatorWhitelistResponse, error) {
+	ctx := sdk.UnwrapSDKContext(goCtx)
+	
+	// Validate the message
+	if err := msg.ValidateBasic(); err != nil {
+		return nil, err
+	}
+	
+	// Check authority
+	if msg.Authority != k.authority {
+		return nil, types.ErrUnauthorized.Wrapf("only authority %s can set validator whitelist", k.authority)
+	}
+	
+	// Set the whitelist
+	if err := k.Keeper.SetValidatorWhitelist(ctx, msg.Validators); err != nil {
+		return nil, err
+	}
+	
+	// Emit event
+	ctx.EventManager().EmitEvent(
+		sdk.NewEvent(
+			types.EventTypeParameterUpdate,
+			sdk.NewAttribute(sdk.AttributeKeyAction, "set_validator_whitelist"),
+			sdk.NewAttribute("authority", msg.Authority),
+			sdk.NewAttribute("count", fmt.Sprintf("%d", len(msg.Validators))),
+		),
+	)
+	
+	return &types.MsgSetValidatorWhitelistResponse{}, nil
+}
+
+// SetValidatorBlacklist implements types.MsgServer
+func (k msgServer) SetValidatorBlacklist(goCtx context.Context, msg *types.MsgSetValidatorBlacklist) (*types.MsgSetValidatorBlacklistResponse, error) {
+	ctx := sdk.UnwrapSDKContext(goCtx)
+	
+	// Validate the message
+	if err := msg.ValidateBasic(); err != nil {
+		return nil, err
+	}
+	
+	// Check authority
+	if msg.Authority != k.authority {
+		return nil, types.ErrUnauthorized.Wrapf("only authority %s can set validator blacklist", k.authority)
+	}
+	
+	// Set the blacklist
+	if err := k.Keeper.SetValidatorBlacklist(ctx, msg.Validators); err != nil {
+		return nil, err
+	}
+	
+	// Emit event
+	ctx.EventManager().EmitEvent(
+		sdk.NewEvent(
+			types.EventTypeParameterUpdate,
+			sdk.NewAttribute(sdk.AttributeKeyAction, "set_validator_blacklist"),
+			sdk.NewAttribute("authority", msg.Authority),
+			sdk.NewAttribute("count", fmt.Sprintf("%d", len(msg.Validators))),
+		),
+	)
+	
+	return &types.MsgSetValidatorBlacklistResponse{}, nil
+}

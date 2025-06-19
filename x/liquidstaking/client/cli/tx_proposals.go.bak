@@ -1,0 +1,270 @@
+package cli
+
+import (
+	"fmt"
+	"os"
+	"strconv"
+
+	"github.com/spf13/cobra"
+
+	"github.com/cosmos/cosmos-sdk/client"
+	"github.com/cosmos/cosmos-sdk/client/flags"
+	"github.com/cosmos/cosmos-sdk/client/tx"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types/v1beta1"
+
+	"github.com/rollchains/flora/x/liquidstaking/types"
+)
+
+// GetProposalCmds returns liquid staking proposal commands
+func GetProposalCmds() []*cobra.Command {
+	return []*cobra.Command{
+		CmdSubmitUpdateParamsProposal(),
+		CmdSubmitEmergencyPauseProposal(),
+		CmdSubmitUpdateValidatorCapProposal(),
+	}
+}
+
+// CmdSubmitUpdateParamsProposal returns a command for submitting a parameter update proposal
+func CmdSubmitUpdateParamsProposal() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "update-params [title] [description] [deposit] [changes-file]",
+		Short: "Submit a proposal to update liquid staking module parameters",
+		Args:  cobra.ExactArgs(4),
+		Long: `Submit a proposal to update liquid staking module parameters.
+		
+The changes file should be a JSON file with an array of parameter changes:
+[
+  {
+    "key": "enabled",
+    "value": "true"
+  },
+  {
+    "key": "global_liquid_staking_cap",
+    "value": "0.5"
+  }
+]
+
+Valid parameter keys:
+- enabled
+- global_liquid_staking_cap
+- validator_liquid_cap
+- min_liquid_stake_amount
+- rate_limit_period_hours
+- global_daily_tokenization_percent
+- validator_daily_tokenization_percent
+- global_daily_tokenization_count
+- validator_daily_tokenization_count
+- user_daily_tokenization_count
+- warning_threshold_percent
+- auto_compound_enabled
+- auto_compound_frequency_blocks
+- max_rate_change_per_update
+- min_blocks_between_updates`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			clientCtx, err := client.GetClientTxContext(cmd)
+			if err != nil {
+				return err
+			}
+
+			title := args[0]
+			description := args[1]
+			depositStr := args[2]
+			changesFile := args[3]
+
+			deposit, err := sdk.ParseCoinsNormalized(depositStr)
+			if err != nil {
+				return err
+			}
+
+			// Parse changes from file
+			var changes []types.ParamChange
+			contents, err := clientCtx.Codec.MarshalJSON(&changes)
+			if err != nil {
+				return fmt.Errorf("failed to read changes file: %w", err)
+			}
+
+			if err := clientCtx.Codec.UnmarshalJSON(contents, &changes); err != nil {
+				return fmt.Errorf("failed to parse changes: %w", err)
+			}
+
+			// Create the proposal
+			content := types.NewUpdateParamsProposal(title, description, changes)
+
+			// Get proposer address
+			from := clientCtx.GetFromAddress()
+
+			// Create and validate the proposal message
+			msg, err := govtypes.NewMsgSubmitProposal(content, deposit, from)
+			if err != nil {
+				return err
+			}
+
+			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
+		},
+	}
+
+	flags.AddTxFlagsToCmd(cmd)
+	return cmd
+}
+
+// CmdSubmitEmergencyPauseProposal returns a command for submitting an emergency pause proposal
+func CmdSubmitEmergencyPauseProposal() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "emergency-pause [title] [description] [deposit] [pause] [duration]",
+		Short: "Submit a proposal to pause/unpause the liquid staking module",
+		Args:  cobra.ExactArgs(5),
+		Long: `Submit a proposal to pause or unpause the liquid staking module.
+
+Arguments:
+- title: Title of the proposal
+- description: Description of the proposal
+- deposit: Initial deposit (e.g., "1000flora")
+- pause: Whether to pause (true) or unpause (false) the module
+- duration: Duration in seconds for automatic unpause (0 for permanent)
+
+Examples:
+# Pause for 24 hours
+$ florad tx gov submit-proposal emergency-pause "Emergency Pause" "Critical bug found" 1000flora true 86400
+
+# Permanent pause
+$ florad tx gov submit-proposal emergency-pause "Emergency Pause" "Security issue" 1000flora true 0
+
+# Unpause
+$ florad tx gov submit-proposal emergency-pause "Resume Operations" "Issue resolved" 1000flora false 0`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			clientCtx, err := client.GetClientTxContext(cmd)
+			if err != nil {
+				return err
+			}
+
+			title := args[0]
+			description := args[1]
+			depositStr := args[2]
+			pauseStr := args[3]
+			durationStr := args[4]
+
+			deposit, err := sdk.ParseCoinsNormalized(depositStr)
+			if err != nil {
+				return err
+			}
+
+			pause, err := strconv.ParseBool(pauseStr)
+			if err != nil {
+				return fmt.Errorf("invalid pause value: %w", err)
+			}
+
+			duration, err := strconv.ParseInt(durationStr, 10, 64)
+			if err != nil {
+				return fmt.Errorf("invalid duration: %w", err)
+			}
+
+			// Create the proposal
+			content := types.NewEmergencyPauseProposal(title, description, pause, duration)
+
+			// Get proposer address
+			from := clientCtx.GetFromAddress()
+
+			// Create and validate the proposal message
+			msg, err := govtypes.NewMsgSubmitProposal(content, deposit, from)
+			if err != nil {
+				return err
+			}
+
+			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
+		},
+	}
+
+	flags.AddTxFlagsToCmd(cmd)
+	return cmd
+}
+
+// CmdSubmitUpdateValidatorCapProposal returns a command for updating a validator's liquid cap
+func CmdSubmitUpdateValidatorCapProposal() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "update-validator-cap [title] [description] [deposit] [validator] [liquid-cap]",
+		Short: "Submit a proposal to update a validator's liquid staking cap",
+		Args:  cobra.ExactArgs(5),
+		Long: `Submit a proposal to update a specific validator's liquid staking cap.
+
+Arguments:
+- title: Title of the proposal
+- description: Description of the proposal
+- deposit: Initial deposit (e.g., "1000flora")
+- validator: Validator address (floravaloper...)
+- liquid-cap: New liquid cap as a decimal (e.g., "0.5" for 50%)
+
+Example:
+$ florad tx gov submit-proposal update-validator-cap \
+  "Update Validator Cap" \
+  "Increase cap for high-performing validator" \
+  1000flora \
+  floravaloper1abc... \
+  0.75`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			clientCtx, err := client.GetClientTxContext(cmd)
+			if err != nil {
+				return err
+			}
+
+			title := args[0]
+			description := args[1]
+			depositStr := args[2]
+			validator := args[3]
+			liquidCap := args[4]
+
+			deposit, err := sdk.ParseCoinsNormalized(depositStr)
+			if err != nil {
+				return err
+			}
+
+			// Validate validator address
+			_, err = sdk.ValAddressFromBech32(validator)
+			if err != nil {
+				return fmt.Errorf("invalid validator address: %w", err)
+			}
+
+			// Validate liquid cap
+			cap, err := sdk.NewDecFromStr(liquidCap)
+			if err != nil {
+				return fmt.Errorf("invalid liquid cap: %w", err)
+			}
+
+			if cap.IsNegative() || cap.GT(sdk.OneDec()) {
+				return fmt.Errorf("liquid cap must be between 0 and 1")
+			}
+
+			// Create the proposal
+			content := types.NewUpdateValidatorCapProposal(title, description, validator, liquidCap)
+
+			// Get proposer address
+			from := clientCtx.GetFromAddress()
+
+			// Create and validate the proposal message
+			msg, err := govtypes.NewMsgSubmitProposal(content, deposit, from)
+			if err != nil {
+				return err
+			}
+
+			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
+		},
+	}
+
+	flags.AddTxFlagsToCmd(cmd)
+	return cmd
+}
+
+// ParseParamChangeProposalFile parses parameter changes from a JSON file
+func ParseParamChangeProposalFile(cdc client.Codec, proposalFile string) ([]types.ParamChange, error) {
+	contents, err := os.ReadFile(proposalFile)
+	if err != nil {
+		return nil, err
+	}
+
+	var changes []types.ParamChange
+	if err := cdc.UnmarshalJSON(contents, &changes); err != nil {
+		return nil, err
+	}
+
+	return changes, nil
+}

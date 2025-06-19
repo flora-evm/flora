@@ -1,251 +1,201 @@
 # Liquid Staking Module
 
+The liquid staking module enables users to tokenize their staked assets while maintaining the security and decentralization of the network. Users receive liquid staking tokens (LST) that represent their staked position and can be freely transferred, traded, or used in DeFi applications.
+
 ## Overview
 
-The liquid staking module enables users to tokenize their staked assets while maintaining the security and rewards of the staking system. This module is being implemented in a staged approach over 20 weeks, with each stage building upon the previous functionality.
+Liquid staking solves the capital efficiency problem in Proof of Stake networks where staked tokens are locked and cannot be used for other purposes. With this module, users can:
 
-## Current Status: Stage 5 Complete ✅
+- **Tokenize staked assets** - Convert delegated stakes into fungible LST tokens
+- **Maintain staking rewards** - Continue earning staking rewards while holding LST
+- **Unlock liquidity** - Use LST tokens in DeFi while contributing to network security
+- **Redeem anytime** - Convert LST tokens back to staked tokens
 
-### Stage 1: Basic Infrastructure (Week 1) - COMPLETED
+## Features
 
-**Objective**: Establish the foundational module structure with basic types and minimal keeper functionality.
+### Core Functionality
+- **Tokenization** - Convert delegated shares to liquid staking tokens
+- **Redemption** - Burn LST tokens to restore delegated shares
+- **Exchange Rates** - Track value of LST tokens relative to native tokens
+- **IBC Compatible** - Transfer LST tokens across IBC-enabled chains
 
-**Completed Components**:
+### Safety Mechanisms
+- **Liquid Staking Caps** - Global and per-validator limits prevent concentration
+- **Rate Limiting** - Daily limits on tokenization activity
+- **Emergency Controls** - Pause functionality for crisis management
+- **Validator Controls** - Whitelist/blacklist for validator participation
 
-1. **Module Structure**
-   - Created standard Cosmos SDK module directory layout
-   - Implemented `AppModuleBasic` and `AppModule` interfaces
-   - Integrated with app.go
+### Advanced Features
+- **Auto-compound** - Automatic reinvestment of staking rewards
+- **Governance Integration** - Parameter updates via governance proposals
+- **Hooks System** - Extensible architecture for custom logic
+- **Multi-validator Support** - Tokenize stakes from multiple validators
 
-2. **Core Types**
-   - `TokenizationRecord`: Tracks tokenized stake positions
-     - ID, Validator, Owner, SharesTokenized
-     - Full validation logic
-   - `ModuleParams`: Module-wide parameters
-     - GlobalLiquidStakingCap (default: 25%)
-     - ValidatorLiquidCap (default: 50%)
-     - Enabled flag
+## Architecture
 
-3. **Keeper Implementation**
-   - Basic keeper structure with store service
-   - Parameter management (Get/Set)
-   - TokenizationRecord CRUD operations
-   - Genesis import/export functionality
-
-4. **Protobuf Integration**
-   - Generated types from proto definitions
-   - Fixed import paths for cosmossdk.io/math types
-   - Proper codec registration
-
-5. **Testing**
-   - Comprehensive unit tests for all types
-   - Keeper functionality tests
-   - Genesis validation tests
-   - All tests passing (30/30)
-
-### Technical Decisions
-
-1. **Storage Design**
-   - Using protobuf for all persisted types
-   - KVStore keys: params, tokenization records, last ID counter
-   - Efficient iteration patterns for getAllRecords
-
-2. **Type Safety**
-   - Using cosmossdk.io/math.Int for numeric values
-   - Strict validation on all user inputs
-   - Bech32 address validation with proper prefixes
-
-3. **Module Integration**
-   - Following tokenfactory module pattern
-   - Minimal dependencies for Stage 1
-   - Prepared hooks for future staking integration
+```
+User -> MsgTokenizeShares -> Keeper -> Staking Module
+                                    -> Bank Module (Mint LST)
+                                    -> Store (Record)
+                                    
+User -> MsgRedeemTokens -> Keeper -> Bank Module (Burn LST)
+                                  -> Staking Module
+                                  -> Store (Update/Delete Record)
+```
 
 ## Usage
 
-The liquid staking module now supports tokenization and redemption of staked assets.
+### CLI Commands
 
-### Tokenizing Shares
-
-Convert your delegated shares into liquid staking tokens:
-
+#### Tokenize Shares
 ```bash
-florad tx liquidstaking tokenize-shares [delegator] [validator] [amount] --from [key]
+# Tokenize 1000 FLORA from a delegation
+florad tx liquidstaking tokenize-shares 1000flora floravaloper1... --from mykey
 
-# Example: Tokenize 1000 shares
-florad tx liquidstaking tokenize-shares flora1... floravaloper1... 1000shares --from mykey
+# Tokenize to a different owner
+florad tx liquidstaking tokenize-shares 1000flora floravaloper1... --owner flora1... --from mykey
 ```
 
-### Redeeming Tokens
-
-Convert liquid staking tokens back to regular delegations:
-
+#### Redeem Tokens
 ```bash
-florad tx liquidstaking redeem-tokens [amount] --from [key]
-
-# Example: Redeem 500 liquid staking tokens
-florad tx liquidstaking redeem-tokens 500flora/lstake/floravaloper1.../1 --from mykey
+# Redeem liquid staking tokens
+florad tx liquidstaking redeem-tokens 1000liquidstake/floravaloper1.../1 --from mykey
 ```
 
-### Genesis Configuration
+#### Query Commands
+```bash
+# Get module parameters
+florad query liquidstaking params
 
-```json
-{
-  "liquidstaking": {
-    "params": {
-      "global_liquid_staking_cap": "0.250000000000000000",
-      "validator_liquid_cap": "0.500000000000000000",
-      "enabled": true
-    },
-    "tokenization_records": [],
-    "last_tokenization_record_id": "0"
+# List all tokenization records
+florad query liquidstaking tokenization-records
+
+# Get specific record
+florad query liquidstaking tokenization-record 1
+
+# Get exchange rate for a validator
+florad query liquidstaking exchange-rate floravaloper1...
+
+# Check liquid staked amount
+florad query liquidstaking total-liquid-staked
+florad query liquidstaking validator-liquid-staked floravaloper1...
+```
+
+### Governance
+
+#### Update Parameters
+```bash
+# Create parameter change proposal
+florad tx gov submit-proposal update-params liquidstaking \
+  "Update Liquid Staking Params" \
+  "Enable auto-compound feature" \
+  1000flora \
+  params.json \
+  --from mykey
+
+# params.json example:
+[
+  {
+    "key": "auto_compound_enabled",
+    "value": "true"
+  },
+  {
+    "key": "auto_compound_frequency_blocks",
+    "value": "28800"
   }
-}
+]
 ```
 
-### Parameters
-
-- `global_liquid_staking_cap`: Maximum percentage of total staked tokens that can be liquid staked (default: 25%)
-- `validator_liquid_cap`: Maximum percentage of a validator's stake that can be liquid staked (default: 50%)
-- `enabled`: Module enable/disable flag
-
-## Staking Integration Details
-
-### Tokenization Flow
-1. **Validation Phase**
-   - Check module is enabled
-   - Validate addresses and amounts
-   - Verify delegation exists with sufficient shares
-   - Ensure validator is not jailed
-   - Check liquid staking caps won't be exceeded
-
-2. **Execution Phase**
-   - Unbond shares from validator
-   - Generate unique LST denomination
-   - Mint liquid staking tokens to owner
-   - Create and index tokenization record
-   - Update liquid staking statistics
-   - Emit tokenization events
-
-### Redemption Flow  
-1. **Validation Phase**
-   - Verify token ownership
-   - Check sufficient LST balance
-   - Validate tokenization record exists
-
-2. **Execution Phase**
-   - Burn liquid staking tokens
-   - Re-delegate shares to original validator
-   - Update or delete tokenization record
-   - Update liquid staking statistics
-   - Emit redemption events
-
-### Safety Features
-- **Validator Eligibility**: Only non-jailed validators
-- **Cap Enforcement**: Global and per-validator limits
-- **Address Validation**: Comprehensive bech32 validation
-- **Amount Validation**: Positive, non-zero amounts only
-- **State Consistency**: Atomic operations with rollback on failure
-
-## Development Roadmap
-
-### ✅ Stage 1: Basic Infrastructure (Week 1) - COMPLETED
-- Module structure and basic types
-- Minimal keeper implementation
-- Genesis handling
-- Unit tests
-
-### ✅ Stage 2: State Management (Week 2) - COMPLETED
-- Extended keeper with tokenization record operations
-- Added indexed queries (by validator, by owner)
-- Implemented validation logic for liquid staking caps
-- Created comprehensive test suite (38 tests, all passing)
-- Added proto query service definitions
-- Implemented state aggregation (total and per-validator tracking)
-
-### ✅ Stage 3: Basic Tokenization (Weeks 3-4) - COMPLETED
-- Implemented MsgTokenizeShares with full validation
-- Integration with staking module for unbonding shares
-- Unique liquid staking token denomination generation
-- Bank module integration for token minting
-- Comprehensive event emission
-- Full test coverage with mock keepers
-
-### ✅ Stage 4: Redemption Flow (Week 5) - COMPLETED  
-- Implemented MsgRedeemTokens for converting LSTs back to delegations
-- Token burning and re-delegation logic
-- Partial and full redemption support
-- Record lifecycle management (update/delete)
-- Event emission for redemption tracking
-- Complete test coverage for edge cases
-
-### ✅ Stage 5: Integration with Staking Module (Week 6) - COMPLETED
-- Deep integration with Cosmos SDK staking module
-- Mock staking keeper for comprehensive testing
-- Edge case handling:
-  - Jailed validators
-  - Insufficient delegations  
-  - Unbonding/unbonded validators
-  - Validator commission changes
-  - Slashed validators
-- Liquid staking cap enforcement (global and per-validator)
-- Validation helper functions for code reuse
-- Enhanced error messages and documentation
-
-### 🚀 Stage 6: Token Factory Integration (Week 7) - NEXT
-- Integration with Token Factory module
-- Custom denomination metadata
-- Enhanced token creation process
-
-### Future Stages (Weeks 8-20)
-- Stage 7: EVM Precompiles (Week 8)
-- Stage 8: Reward Distribution (Weeks 9-10)
-- Stage 9: Slashing Handling (Week 11)
-- Stage 10: Unbonding Period Management (Week 12)
-- Stage 11: Governance Integration (Week 13)
-- Stage 12: Query Improvements (Week 14)
-- Stage 13: IBC Compatibility (Week 15)
-- Stage 14: CLI Enhancements (Week 16)
-- Stage 15: Performance Optimization (Week 17)
-- Stage 16: Security Audit Prep (Week 18)
-- Stage 17: Documentation (Week 19)
-- Stage 18: Mainnet Preparation (Week 20)
-
-## Testing
-
-Run all module tests:
+#### Emergency Pause
 ```bash
-go test ./x/liquidstaking/...
+# Submit emergency pause proposal
+florad tx gov submit-proposal emergency-pause \
+  "Emergency Pause Liquid Staking" \
+  "Critical vulnerability discovered" \
+  1000flora \
+  true \
+  86400 \
+  --from mykey
 ```
 
-Run specific test suites:
-```bash
-go test ./x/liquidstaking/types -v
-go test ./x/liquidstaking/keeper -v
+### Integration
+
+For developers integrating with the liquid staking module:
+
+```go
+import (
+    liquidstakingkeeper "github.com/rollchains/flora/x/liquidstaking/keeper"
+    liquidstakingtypes "github.com/rollchains/flora/x/liquidstaking/types"
+)
+
+// Query exchange rate
+rate, found := keeper.GetExchangeRate(ctx, validatorAddr)
+
+// Check if validator is allowed
+allowed := keeper.IsValidatorAllowed(ctx, validatorAddr)
+
+// Get liquid staked amount
+amount := keeper.GetValidatorLiquidStakedAmount(ctx, validatorAddr)
 ```
 
-Run integration tests:
-```bash
-# Staking integration tests
-go test ./x/liquidstaking/keeper -run "TestStakingIntegration" -v
+## Parameters
 
-# Validator state tests
-go test ./x/liquidstaking/keeper -run "TestValidatorState" -v
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `enabled` | bool | true | Enable/disable the module |
+| `global_liquid_staking_cap` | Dec | 0.25 | Maximum % of total supply that can be liquid staked |
+| `validator_liquid_cap` | Dec | 0.50 | Maximum % of validator's stake that can be liquid |
+| `min_liquid_stake_amount` | Int | 1000000 | Minimum amount to tokenize |
+| `rate_limit_period_hours` | uint32 | 24 | Rate limit window in hours |
+| `global_daily_tokenization_percent` | Dec | 0.10 | Daily global tokenization limit (%) |
+| `validator_daily_tokenization_percent` | Dec | 0.10 | Daily per-validator limit (%) |
+| `global_daily_tokenization_count` | uint64 | 100 | Max daily tokenization transactions globally |
+| `validator_daily_tokenization_count` | uint64 | 10 | Max daily transactions per validator |
+| `user_daily_tokenization_count` | uint64 | 5 | Max daily transactions per user |
+| `warning_threshold_percent` | Dec | 0.90 | Emit warning when cap usage exceeds this |
+| `auto_compound_enabled` | bool | false | Enable automatic reward compounding |
+| `auto_compound_frequency_blocks` | int64 | 28800 | Blocks between auto-compound runs |
+| `max_rate_change_per_update` | Dec | 0.01 | Maximum exchange rate change per update |
+| `min_blocks_between_updates` | int64 | 100 | Minimum blocks between rate updates |
 
-# Unbonding tests
-go test ./x/liquidstaking/keeper -run "TestUnbonding" -v
-```
+## Events
 
-Current test coverage:
-- Types: 100% coverage
-- Keeper: 95%+ coverage
-- Integration: Comprehensive edge case coverage
+The module emits detailed events for all operations:
+
+- `tokenize_shares` - Emitted when shares are tokenized
+- `redeem_tokens` - Emitted when tokens are redeemed  
+- `exchange_rate_updated` - Emitted when exchange rate changes
+- `liquid_staking_cap_exceeded` - Warning when approaching caps
+- `parameter_updated` - Emitted on parameter changes
+
+## Security Considerations
+
+1. **Validator Risk** - LST tokens inherit the risk of the underlying validator
+2. **Slashing** - Validator slashing affects LST token value
+3. **Exchange Rate** - Rate changes affect redemption value
+4. **Concentration** - Caps prevent too much stake becoming liquid
+
+## FAQ
+
+**Q: What happens to my staking rewards?**
+A: Staking rewards continue to accrue and are reflected in the exchange rate. When auto-compound is enabled, rewards are automatically restaked.
+
+**Q: Can I vote with LST tokens?**
+A: No, governance voting rights remain with the original delegator until tokens are redeemed.
+
+**Q: What if a validator gets slashed?**
+A: The LST token value decreases proportionally to the slashing penalty.
+
+**Q: Can I transfer LST tokens via IBC?**
+A: Yes, LST tokens are IBC-compatible and can be transferred to other chains.
+
+**Q: How is the exchange rate calculated?**
+A: Exchange rate = (Validator's total tokens + rewards) / Total shares
 
 ## Contributing
 
-This module is under active development. Please refer to the Flora contribution guidelines.
+We welcome contributions! Please see our contributing guidelines and submit PRs to our GitHub repository.
 
-## References
+## License
 
-- [Cosmos SDK Staking Module](https://docs.cosmos.network/main/modules/staking)
-- [Liquid Staking Research](../docs/liquid-staking/)
-- [Implementation Plan](../docs/liquid-staking/implementation/)
+This module is licensed under the Apache 2.0 License.

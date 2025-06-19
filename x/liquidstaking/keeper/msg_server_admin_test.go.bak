@@ -1,0 +1,366 @@
+package keeper_test
+
+import (
+	"testing"
+
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/stretchr/testify/suite"
+
+	"github.com/rollchains/flora/x/liquidstaking/keeper"
+	"github.com/rollchains/flora/x/liquidstaking/types"
+)
+
+type MsgServerAdminTestSuite struct {
+	KeeperTestSuite
+	msgServer types.MsgServer
+}
+
+func TestMsgServerAdminTestSuite(t *testing.T) {
+	suite.Run(t, new(MsgServerAdminTestSuite))
+}
+
+func (suite *MsgServerAdminTestSuite) SetupTest() {
+	suite.KeeperTestSuite.SetupTest()
+	suite.msgServer = keeper.NewMsgServerImpl(suite.keeper)
+}
+
+func (suite *MsgServerAdminTestSuite) TestMsgEmergencyPause() {
+	authority := suite.keeper.GetAuthority()
+
+	testCases := []struct {
+		name      string
+		msg       *types.MsgEmergencyPause
+		expectErr bool
+		errMsg    string
+	}{
+		{
+			"valid pause",
+			&types.MsgEmergencyPause{
+				Authority: authority,
+				Reason:    "security issue",
+				Duration:  3600,
+			},
+			false,
+			"",
+		},
+		{
+			"unauthorized",
+			&types.MsgEmergencyPause{
+				Authority: "unauthorized",
+				Reason:    "test",
+				Duration:  0,
+			},
+			true,
+			"unauthorized",
+		},
+		{
+			"empty reason",
+			&types.MsgEmergencyPause{
+				Authority: authority,
+				Reason:    "",
+				Duration:  0,
+			},
+			true,
+			"reason cannot be empty",
+		},
+		{
+			"negative duration",
+			&types.MsgEmergencyPause{
+				Authority: authority,
+				Reason:    "test",
+				Duration:  -1,
+			},
+			true,
+			"duration cannot be negative",
+		},
+	}
+
+	for _, tc := range testCases {
+		suite.Run(tc.name, func() {
+			res, err := suite.msgServer.EmergencyPause(suite.ctx, tc.msg)
+			if tc.expectErr {
+				suite.Require().Error(err)
+				suite.Contains(err.Error(), tc.errMsg)
+				suite.Nil(res)
+			} else {
+				suite.Require().NoError(err)
+				suite.NotNil(res)
+				// Verify module is paused
+				suite.True(suite.keeper.IsModulePaused(suite.ctx))
+			}
+		})
+	}
+}
+
+func (suite *MsgServerAdminTestSuite) TestMsgEmergencyUnpause() {
+	authority := suite.keeper.GetAuthority()
+
+	// First pause the module
+	pauseMsg := &types.MsgEmergencyPause{
+		Authority: authority,
+		Reason:    "test pause",
+		Duration:  0,
+	}
+	_, err := suite.msgServer.EmergencyPause(suite.ctx, pauseMsg)
+	suite.Require().NoError(err)
+	suite.True(suite.keeper.IsModulePaused(suite.ctx))
+
+	testCases := []struct {
+		name      string
+		msg       *types.MsgEmergencyUnpause
+		expectErr bool
+		errMsg    string
+	}{
+		{
+			"valid unpause",
+			&types.MsgEmergencyUnpause{
+				Authority: authority,
+			},
+			false,
+			"",
+		},
+		{
+			"unauthorized",
+			&types.MsgEmergencyUnpause{
+				Authority: "unauthorized",
+			},
+			true,
+			"unauthorized",
+		},
+		{
+			"invalid address",
+			&types.MsgEmergencyUnpause{
+				Authority: "invalid",
+			},
+			true,
+			"invalid authority address",
+		},
+	}
+
+	for _, tc := range testCases {
+		suite.Run(tc.name, func() {
+			// Re-pause if needed
+			if tc.name != "valid unpause" && !suite.keeper.IsModulePaused(suite.ctx) {
+				_, err := suite.msgServer.EmergencyPause(suite.ctx, pauseMsg)
+				suite.Require().NoError(err)
+			}
+
+			res, err := suite.msgServer.EmergencyUnpause(suite.ctx, tc.msg)
+			if tc.expectErr {
+				suite.Require().Error(err)
+				suite.Contains(err.Error(), tc.errMsg)
+				suite.Nil(res)
+			} else {
+				suite.Require().NoError(err)
+				suite.NotNil(res)
+				// Verify module is unpaused
+				suite.False(suite.keeper.IsModulePaused(suite.ctx))
+			}
+		})
+	}
+}
+
+func (suite *MsgServerAdminTestSuite) TestMsgSetValidatorWhitelist() {
+	authority := suite.keeper.GetAuthority()
+	val1 := sdk.ValAddress([]byte("validator1"))
+	val2 := sdk.ValAddress([]byte("validator2"))
+
+	testCases := []struct {
+		name      string
+		msg       *types.MsgSetValidatorWhitelist
+		expectErr bool
+		errMsg    string
+		checkFunc func()
+	}{
+		{
+			"valid whitelist",
+			&types.MsgSetValidatorWhitelist{
+				Authority:  authority,
+				Validators: []string{val1.String(), val2.String()},
+			},
+			false,
+			"",
+			func() {
+				whitelist := suite.keeper.GetValidatorWhitelist(suite.ctx)
+				suite.Len(whitelist, 2)
+				suite.Contains(whitelist, val1.String())
+				suite.Contains(whitelist, val2.String())
+			},
+		},
+		{
+			"empty whitelist",
+			&types.MsgSetValidatorWhitelist{
+				Authority:  authority,
+				Validators: []string{},
+			},
+			false,
+			"",
+			func() {
+				whitelist := suite.keeper.GetValidatorWhitelist(suite.ctx)
+				suite.Empty(whitelist)
+			},
+		},
+		{
+			"unauthorized",
+			&types.MsgSetValidatorWhitelist{
+				Authority:  "unauthorized",
+				Validators: []string{val1.String()},
+			},
+			true,
+			"only authority",
+			nil,
+		},
+		{
+			"invalid validator address",
+			&types.MsgSetValidatorWhitelist{
+				Authority:  authority,
+				Validators: []string{"invalid_address"},
+			},
+			true,
+			"invalid validator address",
+			nil,
+		},
+	}
+
+	for _, tc := range testCases {
+		suite.Run(tc.name, func() {
+			res, err := suite.msgServer.SetValidatorWhitelist(suite.ctx, tc.msg)
+			if tc.expectErr {
+				suite.Require().Error(err)
+				suite.Contains(err.Error(), tc.errMsg)
+				suite.Nil(res)
+			} else {
+				suite.Require().NoError(err)
+				suite.NotNil(res)
+				if tc.checkFunc != nil {
+					tc.checkFunc()
+				}
+			}
+		})
+	}
+}
+
+func (suite *MsgServerAdminTestSuite) TestMsgSetValidatorBlacklist() {
+	authority := suite.keeper.GetAuthority()
+	val1 := sdk.ValAddress([]byte("validator1"))
+	val2 := sdk.ValAddress([]byte("validator2"))
+
+	testCases := []struct {
+		name      string
+		msg       *types.MsgSetValidatorBlacklist
+		expectErr bool
+		errMsg    string
+		checkFunc func()
+	}{
+		{
+			"valid blacklist",
+			&types.MsgSetValidatorBlacklist{
+				Authority:  authority,
+				Validators: []string{val1.String(), val2.String()},
+			},
+			false,
+			"",
+			func() {
+				blacklist := suite.keeper.GetValidatorBlacklist(suite.ctx)
+				suite.Len(blacklist, 2)
+				suite.Contains(blacklist, val1.String())
+				suite.Contains(blacklist, val2.String())
+			},
+		},
+		{
+			"empty blacklist",
+			&types.MsgSetValidatorBlacklist{
+				Authority:  authority,
+				Validators: []string{},
+			},
+			false,
+			"",
+			func() {
+				blacklist := suite.keeper.GetValidatorBlacklist(suite.ctx)
+				suite.Empty(blacklist)
+			},
+		},
+		{
+			"unauthorized",
+			&types.MsgSetValidatorBlacklist{
+				Authority:  "unauthorized",
+				Validators: []string{val1.String()},
+			},
+			true,
+			"only authority",
+			nil,
+		},
+		{
+			"invalid validator address",
+			&types.MsgSetValidatorBlacklist{
+				Authority:  authority,
+				Validators: []string{"invalid_address"},
+			},
+			true,
+			"invalid validator address",
+			nil,
+		},
+	}
+
+	for _, tc := range testCases {
+		suite.Run(tc.name, func() {
+			res, err := suite.msgServer.SetValidatorBlacklist(suite.ctx, tc.msg)
+			if tc.expectErr {
+				suite.Require().Error(err)
+				suite.Contains(err.Error(), tc.errMsg)
+				suite.Nil(res)
+			} else {
+				suite.Require().NoError(err)
+				suite.NotNil(res)
+				if tc.checkFunc != nil {
+					tc.checkFunc()
+				}
+			}
+		})
+	}
+}
+
+func (suite *MsgServerAdminTestSuite) TestPausedOperations() {
+	authority := suite.keeper.GetAuthority()
+
+	// Pause the module
+	pauseMsg := &types.MsgEmergencyPause{
+		Authority: authority,
+		Reason:    "test pause",
+		Duration:  0,
+	}
+	_, err := suite.msgServer.EmergencyPause(suite.ctx, pauseMsg)
+	suite.Require().NoError(err)
+
+	// Create test messages that should fail when paused
+	delAddr := sdk.AccAddress([]byte("delegator"))
+	valAddr := sdk.ValAddress([]byte("validator"))
+
+	// Test TokenizeShares
+	tokenizeMsg := &types.MsgTokenizeShares{
+		DelegatorAddress: delAddr.String(),
+		ValidatorAddress: valAddr.String(),
+		Shares:           sdk.NewCoin("stake", sdk.NewInt(1000000)),
+	}
+	_, err = suite.msgServer.TokenizeShares(suite.ctx, tokenizeMsg)
+	suite.Require().Error(err)
+	suite.Contains(err.Error(), "liquid staking module is currently paused")
+
+	// Test RedeemTokens
+	redeemMsg := &types.MsgRedeemTokens{
+		OwnerAddress: delAddr.String(),
+		Amount:       sdk.NewCoin("liquidstake/validator/1", sdk.NewInt(1000000)),
+	}
+	_, err = suite.msgServer.RedeemTokens(suite.ctx, redeemMsg)
+	suite.Require().Error(err)
+	suite.Contains(err.Error(), "liquid staking module is currently paused")
+
+	// Test UpdateExchangeRates
+	updateRatesMsg := &types.MsgUpdateExchangeRates{
+		Updater:    authority,
+		Validators: []string{valAddr.String()},
+	}
+	_, err = suite.msgServer.UpdateExchangeRates(suite.ctx, updateRatesMsg)
+	suite.Require().Error(err)
+	suite.Contains(err.Error(), "liquid staking module is currently paused")
+}

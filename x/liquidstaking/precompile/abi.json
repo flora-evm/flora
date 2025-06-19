@@ -1,0 +1,510 @@
+[
+  {
+    "name": "getParams",
+    "type": "function",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "components": [
+          {
+            "name": "enabled",
+            "type": "bool"
+          },
+          {
+            "name": "minLiquidStakeAmount",
+            "type": "uint256"
+          },
+          {
+            "name": "globalLiquidStakingCap",
+            "type": "uint256"
+          },
+          {
+            "name": "validatorLiquidCap",
+            "type": "uint256"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "getTokenizationRecord",
+    "type": "function",
+    "stateMutability": "view",
+    "inputs": [
+      {
+        "name": "recordId",
+        "type": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "components": [
+          {
+            "name": "id",
+            "type": "uint256"
+          },
+          {
+            "name": "validatorAddress",
+            "type": "string"
+          },
+          {
+            "name": "owner",
+            "type": "address"
+          },
+          {
+            "name": "sharesDenomination",
+            "type": "string"
+          },
+          {
+            "name": "liquidStakingTokenDenom",
+            "type": "string"
+          },
+          {
+            "name": "sharesAmount",
+            "type": "uint256"
+          },
+          {
+            "name": "status",
+            "type": "uint8"
+          },
+          {
+            "name": "createdAt",
+            "type": "uint256"
+          },
+          {
+            "name": "redeemedAt",
+            "type": "uint256"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "getTokenizationRecords",
+    "type": "function",
+    "stateMutability": "view",
+    "inputs": [
+      {
+        "name": "offset",
+        "type": "uint256"
+      },
+      {
+        "name": "limit",
+        "type": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "records",
+        "type": "tuple[]",
+        "components": [
+          {
+            "name": "id",
+            "type": "uint256"
+          },
+          {
+            "name": "validatorAddress",
+            "type": "string"
+          },
+          {
+            "name": "owner",
+            "type": "address"
+          },
+          {
+            "name": "sharesDenomination",
+            "type": "string"
+          },
+          {
+            "name": "liquidStakingTokenDenom",
+            "type": "string"
+          },
+          {
+            "name": "sharesAmount",
+            "type": "uint256"
+          },
+          {
+            "name": "status",
+            "type": "uint8"
+          },
+          {
+            "name": "createdAt",
+            "type": "uint256"
+          },
+          {
+            "name": "redeemedAt",
+            "type": "uint256"
+          }
+        ]
+      },
+      {
+        "name": "total",
+        "type": "uint256"
+      }
+    ]
+  },
+  {
+    "name": "getRecordsByOwner",
+    "type": "function",
+    "stateMutability": "view",
+    "inputs": [
+      {
+        "name": "owner",
+        "type": "address"
+      },
+      {
+        "name": "offset",
+        "type": "uint256"
+      },
+      {
+        "name": "limit",
+        "type": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "records",
+        "type": "tuple[]",
+        "components": [
+          {
+            "name": "id",
+            "type": "uint256"
+          },
+          {
+            "name": "validatorAddress",
+            "type": "string"
+          },
+          {
+            "name": "owner",
+            "type": "address"
+          },
+          {
+            "name": "sharesDenomination",
+            "type": "string"
+          },
+          {
+            "name": "liquidStakingTokenDenom",
+            "type": "string"
+          },
+          {
+            "name": "sharesAmount",
+            "type": "uint256"
+          },
+          {
+            "name": "status",
+            "type": "uint8"
+          },
+          {
+            "name": "createdAt",
+            "type": "uint256"
+          },
+          {
+            "name": "redeemedAt",
+            "type": "uint256"
+          }
+        ]
+      },
+      {
+        "name": "total",
+        "type": "uint256"
+      }
+    ]
+  },
+  {
+    "name": "getRecordsByValidator",
+    "type": "function",
+    "stateMutability": "view",
+    "inputs": [
+      {
+        "name": "validatorAddress",
+        "type": "string"
+      },
+      {
+        "name": "offset",
+        "type": "uint256"
+      },
+      {
+        "name": "limit",
+        "type": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "records",
+        "type": "tuple[]",
+        "components": [
+          {
+            "name": "id",
+            "type": "uint256"
+          },
+          {
+            "name": "validatorAddress",
+            "type": "string"
+          },
+          {
+            "name": "owner",
+            "type": "address"
+          },
+          {
+            "name": "sharesDenomination",
+            "type": "string"
+          },
+          {
+            "name": "liquidStakingTokenDenom",
+            "type": "string"
+          },
+          {
+            "name": "sharesAmount",
+            "type": "uint256"
+          },
+          {
+            "name": "status",
+            "type": "uint8"
+          },
+          {
+            "name": "createdAt",
+            "type": "uint256"
+          },
+          {
+            "name": "redeemedAt",
+            "type": "uint256"
+          }
+        ]
+      },
+      {
+        "name": "total",
+        "type": "uint256"
+      }
+    ]
+  },
+  {
+    "name": "getTotalLiquidStaked",
+    "type": "function",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "amount",
+        "type": "uint256"
+      }
+    ]
+  },
+  {
+    "name": "getValidatorLiquidStaked",
+    "type": "function",
+    "stateMutability": "view",
+    "inputs": [
+      {
+        "name": "validatorAddress",
+        "type": "string"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "amount",
+        "type": "uint256"
+      }
+    ]
+  },
+  {
+    "name": "getLiquidStakingTokenInfo",
+    "type": "function",
+    "stateMutability": "view",
+    "inputs": [
+      {
+        "name": "tokenDenom",
+        "type": "string"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "components": [
+          {
+            "name": "isLiquidStakingToken",
+            "type": "bool"
+          },
+          {
+            "name": "validatorAddress",
+            "type": "string"
+          },
+          {
+            "name": "recordId",
+            "type": "uint256"
+          },
+          {
+            "name": "originalDelegator",
+            "type": "address"
+          },
+          {
+            "name": "active",
+            "type": "bool"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "tokenizeShares",
+    "type": "function",
+    "stateMutability": "nonpayable",
+    "inputs": [
+      {
+        "name": "validatorAddress",
+        "type": "string"
+      },
+      {
+        "name": "amount",
+        "type": "uint256"
+      },
+      {
+        "name": "owner",
+        "type": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "components": [
+          {
+            "name": "recordId",
+            "type": "uint256"
+          },
+          {
+            "name": "tokensDenom",
+            "type": "string"
+          },
+          {
+            "name": "tokensAmount",
+            "type": "uint256"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "redeemTokens",
+    "type": "function",
+    "stateMutability": "nonpayable",
+    "inputs": [
+      {
+        "name": "tokenDenom",
+        "type": "string"
+      },
+      {
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "components": [
+          {
+            "name": "validatorAddress",
+            "type": "string"
+          },
+          {
+            "name": "sharesAmount",
+            "type": "uint256"
+          },
+          {
+            "name": "completed",
+            "type": "bool"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "TokenizeSharesEvent",
+    "type": "event",
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "name": "delegator",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "name": "validator",
+        "type": "string"
+      },
+      {
+        "indexed": true,
+        "name": "recordId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "name": "owner",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "name": "sharesAmount",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "name": "tokensAmount",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "name": "tokenDenom",
+        "type": "string"
+      }
+    ]
+  },
+  {
+    "name": "RedeemTokensEvent",
+    "type": "event",
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "name": "owner",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "name": "validator",
+        "type": "string"
+      },
+      {
+        "indexed": true,
+        "name": "recordId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "name": "tokenDenom",
+        "type": "string"
+      },
+      {
+        "indexed": false,
+        "name": "tokensAmount",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "name": "sharesAmount",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "name": "completed",
+        "type": "bool"
+      }
+    ]
+  }
+]

@@ -26,6 +26,12 @@ const (
 	Query_TokenizationRecordsByOwner_FullMethodName     = "/flora.liquidstaking.v1.Query/TokenizationRecordsByOwner"
 	Query_TotalLiquidStaked_FullMethodName              = "/flora.liquidstaking.v1.Query/TotalLiquidStaked"
 	Query_ValidatorLiquidStaked_FullMethodName          = "/flora.liquidstaking.v1.Query/ValidatorLiquidStaked"
+	Query_TokenizationRecordsByDenom_FullMethodName     = "/flora.liquidstaking.v1.Query/TokenizationRecordsByDenom"
+	Query_RateLimitStatus_FullMethodName                = "/flora.liquidstaking.v1.Query/RateLimitStatus"
+	Query_TokenizationStatistics_FullMethodName         = "/flora.liquidstaking.v1.Query/TokenizationStatistics"
+	Query_ValidatorStatistics_FullMethodName            = "/flora.liquidstaking.v1.Query/ValidatorStatistics"
+	Query_ExchangeRate_FullMethodName                   = "/flora.liquidstaking.v1.Query/ExchangeRate"
+	Query_AllExchangeRates_FullMethodName               = "/flora.liquidstaking.v1.Query/AllExchangeRates"
 )
 
 // QueryClient is the client API for Query service.
@@ -46,6 +52,18 @@ type QueryClient interface {
 	TotalLiquidStaked(ctx context.Context, in *QueryTotalLiquidStakedRequest, opts ...grpc.CallOption) (*QueryTotalLiquidStakedResponse, error)
 	// ValidatorLiquidStaked queries the amount of liquid staked tokens for a specific validator
 	ValidatorLiquidStaked(ctx context.Context, in *QueryValidatorLiquidStakedRequest, opts ...grpc.CallOption) (*QueryValidatorLiquidStakedResponse, error)
+	// TokenizationRecordsByDenom queries tokenization records by LST denomination
+	TokenizationRecordsByDenom(ctx context.Context, in *QueryTokenizationRecordsByDenomRequest, opts ...grpc.CallOption) (*QueryTokenizationRecordsByDenomResponse, error)
+	// RateLimitStatus queries the current rate limit usage for an address
+	RateLimitStatus(ctx context.Context, in *QueryRateLimitStatusRequest, opts ...grpc.CallOption) (*QueryRateLimitStatusResponse, error)
+	// TokenizationStatistics queries aggregated tokenization statistics
+	TokenizationStatistics(ctx context.Context, in *QueryTokenizationStatisticsRequest, opts ...grpc.CallOption) (*QueryTokenizationStatisticsResponse, error)
+	// ValidatorStatistics queries detailed statistics for a specific validator
+	ValidatorStatistics(ctx context.Context, in *QueryValidatorStatisticsRequest, opts ...grpc.CallOption) (*QueryValidatorStatisticsResponse, error)
+	// ExchangeRate returns the current exchange rate for a validator
+	ExchangeRate(ctx context.Context, in *QueryExchangeRateRequest, opts ...grpc.CallOption) (*QueryExchangeRateResponse, error)
+	// AllExchangeRates returns all exchange rates
+	AllExchangeRates(ctx context.Context, in *QueryAllExchangeRatesRequest, opts ...grpc.CallOption) (*QueryAllExchangeRatesResponse, error)
 }
 
 type queryClient struct {
@@ -119,6 +137,60 @@ func (c *queryClient) ValidatorLiquidStaked(ctx context.Context, in *QueryValida
 	return out, nil
 }
 
+func (c *queryClient) TokenizationRecordsByDenom(ctx context.Context, in *QueryTokenizationRecordsByDenomRequest, opts ...grpc.CallOption) (*QueryTokenizationRecordsByDenomResponse, error) {
+	out := new(QueryTokenizationRecordsByDenomResponse)
+	err := c.cc.Invoke(ctx, Query_TokenizationRecordsByDenom_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) RateLimitStatus(ctx context.Context, in *QueryRateLimitStatusRequest, opts ...grpc.CallOption) (*QueryRateLimitStatusResponse, error) {
+	out := new(QueryRateLimitStatusResponse)
+	err := c.cc.Invoke(ctx, Query_RateLimitStatus_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) TokenizationStatistics(ctx context.Context, in *QueryTokenizationStatisticsRequest, opts ...grpc.CallOption) (*QueryTokenizationStatisticsResponse, error) {
+	out := new(QueryTokenizationStatisticsResponse)
+	err := c.cc.Invoke(ctx, Query_TokenizationStatistics_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) ValidatorStatistics(ctx context.Context, in *QueryValidatorStatisticsRequest, opts ...grpc.CallOption) (*QueryValidatorStatisticsResponse, error) {
+	out := new(QueryValidatorStatisticsResponse)
+	err := c.cc.Invoke(ctx, Query_ValidatorStatistics_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) ExchangeRate(ctx context.Context, in *QueryExchangeRateRequest, opts ...grpc.CallOption) (*QueryExchangeRateResponse, error) {
+	out := new(QueryExchangeRateResponse)
+	err := c.cc.Invoke(ctx, Query_ExchangeRate_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) AllExchangeRates(ctx context.Context, in *QueryAllExchangeRatesRequest, opts ...grpc.CallOption) (*QueryAllExchangeRatesResponse, error) {
+	out := new(QueryAllExchangeRatesResponse)
+	err := c.cc.Invoke(ctx, Query_AllExchangeRates_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // QueryServer is the server API for Query service.
 // All implementations must embed UnimplementedQueryServer
 // for forward compatibility
@@ -137,6 +209,18 @@ type QueryServer interface {
 	TotalLiquidStaked(context.Context, *QueryTotalLiquidStakedRequest) (*QueryTotalLiquidStakedResponse, error)
 	// ValidatorLiquidStaked queries the amount of liquid staked tokens for a specific validator
 	ValidatorLiquidStaked(context.Context, *QueryValidatorLiquidStakedRequest) (*QueryValidatorLiquidStakedResponse, error)
+	// TokenizationRecordsByDenom queries tokenization records by LST denomination
+	TokenizationRecordsByDenom(context.Context, *QueryTokenizationRecordsByDenomRequest) (*QueryTokenizationRecordsByDenomResponse, error)
+	// RateLimitStatus queries the current rate limit usage for an address
+	RateLimitStatus(context.Context, *QueryRateLimitStatusRequest) (*QueryRateLimitStatusResponse, error)
+	// TokenizationStatistics queries aggregated tokenization statistics
+	TokenizationStatistics(context.Context, *QueryTokenizationStatisticsRequest) (*QueryTokenizationStatisticsResponse, error)
+	// ValidatorStatistics queries detailed statistics for a specific validator
+	ValidatorStatistics(context.Context, *QueryValidatorStatisticsRequest) (*QueryValidatorStatisticsResponse, error)
+	// ExchangeRate returns the current exchange rate for a validator
+	ExchangeRate(context.Context, *QueryExchangeRateRequest) (*QueryExchangeRateResponse, error)
+	// AllExchangeRates returns all exchange rates
+	AllExchangeRates(context.Context, *QueryAllExchangeRatesRequest) (*QueryAllExchangeRatesResponse, error)
 	mustEmbedUnimplementedQueryServer()
 }
 
@@ -164,6 +248,24 @@ func (UnimplementedQueryServer) TotalLiquidStaked(context.Context, *QueryTotalLi
 }
 func (UnimplementedQueryServer) ValidatorLiquidStaked(context.Context, *QueryValidatorLiquidStakedRequest) (*QueryValidatorLiquidStakedResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ValidatorLiquidStaked not implemented")
+}
+func (UnimplementedQueryServer) TokenizationRecordsByDenom(context.Context, *QueryTokenizationRecordsByDenomRequest) (*QueryTokenizationRecordsByDenomResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method TokenizationRecordsByDenom not implemented")
+}
+func (UnimplementedQueryServer) RateLimitStatus(context.Context, *QueryRateLimitStatusRequest) (*QueryRateLimitStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RateLimitStatus not implemented")
+}
+func (UnimplementedQueryServer) TokenizationStatistics(context.Context, *QueryTokenizationStatisticsRequest) (*QueryTokenizationStatisticsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method TokenizationStatistics not implemented")
+}
+func (UnimplementedQueryServer) ValidatorStatistics(context.Context, *QueryValidatorStatisticsRequest) (*QueryValidatorStatisticsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ValidatorStatistics not implemented")
+}
+func (UnimplementedQueryServer) ExchangeRate(context.Context, *QueryExchangeRateRequest) (*QueryExchangeRateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ExchangeRate not implemented")
+}
+func (UnimplementedQueryServer) AllExchangeRates(context.Context, *QueryAllExchangeRatesRequest) (*QueryAllExchangeRatesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AllExchangeRates not implemented")
 }
 func (UnimplementedQueryServer) mustEmbedUnimplementedQueryServer() {}
 
@@ -304,6 +406,114 @@ func _Query_ValidatorLiquidStaked_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Query_TokenizationRecordsByDenom_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryTokenizationRecordsByDenomRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).TokenizationRecordsByDenom(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_TokenizationRecordsByDenom_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).TokenizationRecordsByDenom(ctx, req.(*QueryTokenizationRecordsByDenomRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_RateLimitStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryRateLimitStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).RateLimitStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_RateLimitStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).RateLimitStatus(ctx, req.(*QueryRateLimitStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_TokenizationStatistics_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryTokenizationStatisticsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).TokenizationStatistics(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_TokenizationStatistics_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).TokenizationStatistics(ctx, req.(*QueryTokenizationStatisticsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_ValidatorStatistics_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryValidatorStatisticsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).ValidatorStatistics(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_ValidatorStatistics_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).ValidatorStatistics(ctx, req.(*QueryValidatorStatisticsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_ExchangeRate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryExchangeRateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).ExchangeRate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_ExchangeRate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).ExchangeRate(ctx, req.(*QueryExchangeRateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_AllExchangeRates_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryAllExchangeRatesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).AllExchangeRates(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_AllExchangeRates_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).AllExchangeRates(ctx, req.(*QueryAllExchangeRatesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Query_ServiceDesc is the grpc.ServiceDesc for Query service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -338,6 +548,30 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ValidatorLiquidStaked",
 			Handler:    _Query_ValidatorLiquidStaked_Handler,
+		},
+		{
+			MethodName: "TokenizationRecordsByDenom",
+			Handler:    _Query_TokenizationRecordsByDenom_Handler,
+		},
+		{
+			MethodName: "RateLimitStatus",
+			Handler:    _Query_RateLimitStatus_Handler,
+		},
+		{
+			MethodName: "TokenizationStatistics",
+			Handler:    _Query_TokenizationStatistics_Handler,
+		},
+		{
+			MethodName: "ValidatorStatistics",
+			Handler:    _Query_ValidatorStatistics_Handler,
+		},
+		{
+			MethodName: "ExchangeRate",
+			Handler:    _Query_ExchangeRate_Handler,
+		},
+		{
+			MethodName: "AllExchangeRates",
+			Handler:    _Query_AllExchangeRates_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

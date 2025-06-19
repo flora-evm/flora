@@ -1,7 +1,6 @@
 package keeper
 
 import (
-	"cosmossdk.io/math"
 	storetypes "cosmossdk.io/store/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	
@@ -136,79 +135,6 @@ func (k Keeper) deleteTokenizationRecordDenomIndex(ctx sdk.Context, denom string
 	k.removeTokenizationRecordDenomIndex(ctx, denom)
 }
 
-// GetTotalLiquidStaked returns the total amount of liquid staked tokens
-func (k Keeper) GetTotalLiquidStaked(ctx sdk.Context) math.Int {
-	store := k.storeService.OpenKVStore(ctx)
-	
-	bz, err := store.Get(types.TotalLiquidStakedKey)
-	if err != nil {
-		panic(err)
-	}
-	if bz == nil {
-		return math.ZeroInt()
-	}
-	
-	var amount math.Int
-	err = amount.Unmarshal(bz)
-	if err != nil {
-		panic(err)
-	}
-	
-	return amount
-}
-
-// SetTotalLiquidStaked sets the total amount of liquid staked tokens
-func (k Keeper) SetTotalLiquidStaked(ctx sdk.Context, amount math.Int) {
-	store := k.storeService.OpenKVStore(ctx)
-	
-	bz, err := amount.Marshal()
-	if err != nil {
-		panic(err)
-	}
-	
-	err = store.Set(types.TotalLiquidStakedKey, bz)
-	if err != nil {
-		panic(err)
-	}
-}
-
-// GetValidatorLiquidStaked returns the amount of liquid staked tokens for a validator
-func (k Keeper) GetValidatorLiquidStaked(ctx sdk.Context, validatorAddr string) math.Int {
-	store := k.storeService.OpenKVStore(ctx)
-	key := types.GetValidatorLiquidStakedKey(validatorAddr)
-	
-	bz, err := store.Get(key)
-	if err != nil {
-		panic(err)
-	}
-	if bz == nil {
-		return math.ZeroInt()
-	}
-	
-	var amount math.Int
-	err = amount.Unmarshal(bz)
-	if err != nil {
-		panic(err)
-	}
-	
-	return amount
-}
-
-// SetValidatorLiquidStaked sets the amount of liquid staked tokens for a validator
-func (k Keeper) SetValidatorLiquidStaked(ctx sdk.Context, validatorAddr string, amount math.Int) {
-	store := k.storeService.OpenKVStore(ctx)
-	key := types.GetValidatorLiquidStakedKey(validatorAddr)
-	
-	bz, err := amount.Marshal()
-	if err != nil {
-		panic(err)
-	}
-	
-	err = store.Set(key, bz)
-	if err != nil {
-		panic(err)
-	}
-}
 
 // setTokenizationRecordIndexes updates all indexes for a tokenization record
 func (k Keeper) setTokenizationRecordIndexes(ctx sdk.Context, record types.TokenizationRecord) {

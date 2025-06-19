@@ -3,6 +3,7 @@ package flora.liquidstaking.v1;
 
 import "gogoproto/gogo.proto";
 import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
 import "cosmos/base/query/v1beta1/pagination.proto";
 import "cosmos_proto/cosmos.proto";
 import "flora/liquidstaking/v1/types.proto";
@@ -44,6 +45,36 @@ service Query {
   // ValidatorLiquidStaked queries the amount of liquid staked tokens for a specific validator
   rpc ValidatorLiquidStaked(QueryValidatorLiquidStakedRequest) returns (QueryValidatorLiquidStakedResponse) {
     option (google.api.http).get = "/flora/liquidstaking/v1/validator_liquid_staked/{validator_address}";
+  }
+  
+  // TokenizationRecordsByDenom queries tokenization records by LST denomination
+  rpc TokenizationRecordsByDenom(QueryTokenizationRecordsByDenomRequest) returns (QueryTokenizationRecordsByDenomResponse) {
+    option (google.api.http).get = "/flora/liquidstaking/v1/tokenization_records/denom/{denom}";
+  }
+  
+  // RateLimitStatus queries the current rate limit usage for an address
+  rpc RateLimitStatus(QueryRateLimitStatusRequest) returns (QueryRateLimitStatusResponse) {
+    option (google.api.http).get = "/flora/liquidstaking/v1/rate_limit_status/{address}";
+  }
+  
+  // TokenizationStatistics queries aggregated tokenization statistics
+  rpc TokenizationStatistics(QueryTokenizationStatisticsRequest) returns (QueryTokenizationStatisticsResponse) {
+    option (google.api.http).get = "/flora/liquidstaking/v1/tokenization_statistics";
+  }
+  
+  // ValidatorStatistics queries detailed statistics for a specific validator
+  rpc ValidatorStatistics(QueryValidatorStatisticsRequest) returns (QueryValidatorStatisticsResponse) {
+    option (google.api.http).get = "/flora/liquidstaking/v1/validator_statistics/{validator_address}";
+  }
+  
+  // ExchangeRate returns the current exchange rate for a validator
+  rpc ExchangeRate(QueryExchangeRateRequest) returns (QueryExchangeRateResponse) {
+    option (google.api.http).get = "/flora/liquidstaking/v1/exchange_rate/{validator_address}";
+  }
+  
+  // AllExchangeRates returns all exchange rates
+  rpc AllExchangeRates(QueryAllExchangeRatesRequest) returns (QueryAllExchangeRatesResponse) {
+    option (google.api.http).get = "/flora/liquidstaking/v1/exchange_rates";
   }
 }
 
@@ -141,4 +172,185 @@ message QueryValidatorLiquidStakedResponse {
     (gogoproto.customtype) = "cosmossdk.io/math.Int",
     (gogoproto.nullable)   = false
   ];
+}
+
+// QueryTokenizationRecordsByDenomRequest is the request type for the Query/TokenizationRecordsByDenom RPC method
+message QueryTokenizationRecordsByDenomRequest {
+  // denom is the LST denomination to query for
+  string denom = 1;
+  
+  // pagination defines an optional pagination for the request
+  cosmos.base.query.v1beta1.PageRequest pagination = 2;
+}
+
+// QueryTokenizationRecordsByDenomResponse is the response type for the Query/TokenizationRecordsByDenom RPC method
+message QueryTokenizationRecordsByDenomResponse {
+  repeated TokenizationRecord records = 1 [(gogoproto.nullable) = false];
+  
+  // pagination defines the pagination in the response
+  cosmos.base.query.v1beta1.PageResponse pagination = 2;
+}
+
+// QueryRateLimitStatusRequest is the request type for the Query/RateLimitStatus RPC method
+message QueryRateLimitStatusRequest {
+  // address can be a global identifier, validator address, or user address
+  string address = 1;
+}
+
+// RateLimitInfo contains rate limit usage information
+message RateLimitInfo {
+  // limit_type identifies the type of limit (global, validator, user)
+  string limit_type = 1;
+  
+  // current_amount is the amount used in the current window
+  string current_amount = 2 [
+    (cosmos_proto.scalar)  = "cosmos.Int",
+    (gogoproto.customtype) = "cosmossdk.io/math.Int",
+    (gogoproto.nullable)   = false
+  ];
+  
+  // max_amount is the maximum allowed in the window
+  string max_amount = 3 [
+    (cosmos_proto.scalar)  = "cosmos.Int",
+    (gogoproto.customtype) = "cosmossdk.io/math.Int",
+    (gogoproto.nullable)   = false
+  ];
+  
+  // current_count is the number of operations in the current window
+  uint64 current_count = 4;
+  
+  // max_count is the maximum operations allowed in the window
+  uint64 max_count = 5;
+  
+  // window_start is when the current window started
+  google.protobuf.Timestamp window_start = 6 [
+    (gogoproto.nullable) = false,
+    (gogoproto.stdtime) = true
+  ];
+  
+  // window_end is when the current window ends
+  google.protobuf.Timestamp window_end = 7 [
+    (gogoproto.nullable) = false,
+    (gogoproto.stdtime) = true
+  ];
+}
+
+// QueryRateLimitStatusResponse is the response type for the Query/RateLimitStatus RPC method
+message QueryRateLimitStatusResponse {
+  // rate_limits contains all applicable rate limit statuses
+  repeated RateLimitInfo rate_limits = 1 [(gogoproto.nullable) = false];
+}
+
+// QueryTokenizationStatisticsRequest is the request type for the Query/TokenizationStatistics RPC method
+message QueryTokenizationStatisticsRequest {}
+
+// QueryTokenizationStatisticsResponse is the response type for the Query/TokenizationStatistics RPC method
+message QueryTokenizationStatisticsResponse {
+  // total_tokenized is the total amount of tokens ever tokenized
+  string total_tokenized = 1 [
+    (cosmos_proto.scalar)  = "cosmos.Int",
+    (gogoproto.customtype) = "cosmossdk.io/math.Int",
+    (gogoproto.nullable)   = false
+  ];
+  
+  // active_liquid_staked is the current amount of liquid staked tokens
+  string active_liquid_staked = 2 [
+    (cosmos_proto.scalar)  = "cosmos.Int",
+    (gogoproto.customtype) = "cosmossdk.io/math.Int",
+    (gogoproto.nullable)   = false
+  ];
+  
+  // total_records is the total number of tokenization records created
+  uint64 total_records = 3;
+  
+  // active_records is the current number of active tokenization records
+  uint64 active_records = 4;
+  
+  // average_record_size is the average size of tokenization records
+  string average_record_size = 5 [
+    (cosmos_proto.scalar)  = "cosmos.Int",
+    (gogoproto.customtype) = "cosmossdk.io/math.Int",
+    (gogoproto.nullable)   = false
+  ];
+  
+  // validators_with_liquid_stake is the number of validators with liquid staked tokens
+  uint64 validators_with_liquid_stake = 6;
+  
+  // total_denoms_created is the total number of unique LST denoms created
+  uint64 total_denoms_created = 7;
+}
+
+// QueryValidatorStatisticsRequest is the request type for the Query/ValidatorStatistics RPC method
+message QueryValidatorStatisticsRequest {
+  // validator_address is the address of the validator
+  string validator_address = 1;
+}
+
+// QueryValidatorStatisticsResponse is the response type for the Query/ValidatorStatistics RPC method
+message QueryValidatorStatisticsResponse {
+  // validator_address is the address of the validator
+  string validator_address = 1;
+  
+  // total_liquid_staked is the current amount of liquid staked tokens for this validator
+  string total_liquid_staked = 2 [
+    (cosmos_proto.scalar)  = "cosmos.Int",
+    (gogoproto.customtype) = "cosmossdk.io/math.Int",
+    (gogoproto.nullable)   = false
+  ];
+  
+  // liquid_staking_percentage is the percentage of validator's tokens that are liquid staked
+  string liquid_staking_percentage = 3 [
+    (cosmos_proto.scalar)  = "cosmos.Dec",
+    (gogoproto.customtype) = "cosmossdk.io/math.LegacyDec",
+    (gogoproto.nullable)   = false
+  ];
+  
+  // active_records is the number of active tokenization records for this validator
+  uint64 active_records = 4;
+  
+  // total_records_created is the total number of records ever created for this validator
+  uint64 total_records_created = 5;
+  
+  // rate_limit_usage is the current rate limit usage for this validator
+  RateLimitInfo rate_limit_usage = 6;
+}
+
+// QueryExchangeRateRequest is the request type for the Query/ExchangeRate RPC method
+message QueryExchangeRateRequest {
+  // validator_address is the address of the validator
+  string validator_address = 1 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+}
+
+// QueryExchangeRateResponse is the response type for the Query/ExchangeRate RPC method
+message QueryExchangeRateResponse {
+  // exchange_rate is the current exchange rate for the validator
+  ExchangeRate exchange_rate = 1 [(gogoproto.nullable) = false];
+  
+  // lst_denom is the denomination of the LST token
+  string lst_denom = 2;
+  
+  // native_amount is the amount of native tokens per 1 LST token
+  string native_amount = 3 [
+    (cosmos_proto.scalar) = "cosmos.Dec",
+    (gogoproto.customtype) = "cosmossdk.io/math.LegacyDec",
+    (gogoproto.nullable) = false
+  ];
+}
+
+// QueryAllExchangeRatesRequest is the request type for the Query/AllExchangeRates RPC method
+message QueryAllExchangeRatesRequest {
+  // pagination defines an optional pagination for the request
+  cosmos.base.query.v1beta1.PageRequest pagination = 1;
+}
+
+// QueryAllExchangeRatesResponse is the response type for the Query/AllExchangeRates RPC method
+message QueryAllExchangeRatesResponse {
+  // exchange_rates is the list of all exchange rates
+  repeated ExchangeRate exchange_rates = 1 [(gogoproto.nullable) = false];
+  
+  // pagination defines the pagination in the response
+  cosmos.base.query.v1beta1.PageResponse pagination = 2;
+  
+  // global_exchange_rate is the overall exchange rate statistics
+  GlobalExchangeRate global_exchange_rate = 3;
 }

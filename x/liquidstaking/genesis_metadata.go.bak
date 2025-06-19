@@ -1,0 +1,113 @@
+package liquidstaking
+
+import (
+	"fmt"
+
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+
+	"github.com/rollchains/flora/x/liquidstaking/keeper"
+	"github.com/rollchains/flora/x/liquidstaking/types"
+)
+
+// ExportLSTMetadata exports all LST token metadata from the Bank module
+// This should be called during genesis export to capture all LST metadata
+func ExportLSTMetadata(ctx sdk.Context, k keeper.Keeper, bankKeeper types.BankKeeper) []banktypes.Metadata {
+	var metadata []banktypes.Metadata
+	
+	// Get all tokenization records
+	records := k.GetAllTokenizationRecords(ctx)
+	
+	// For each record, check if its denom has metadata in the bank module
+	for _, record := range records {
+		if record.Denom != "" {
+			// Get metadata from bank keeper
+			meta, found := bankKeeper.GetDenomMetaData(ctx, record.Denom)
+			if found {
+				metadata = append(metadata, meta)
+			}
+		}
+	}
+	
+	return metadata
+}
+
+// InitLSTMetadata initializes LST token metadata in the Bank module
+// This should be called during genesis import to restore all LST metadata
+func InitLSTMetadata(ctx sdk.Context, k keeper.Keeper, bankKeeper types.BankKeeper, metadata []banktypes.Metadata) error {
+	for _, meta := range metadata {
+		// Only process LST denoms
+		if types.IsLiquidStakingTokenDenom(meta.Base) {
+			// Verify the denom corresponds to an existing tokenization record
+			_, found := k.getTokenizationRecordByDenom(ctx, meta.Base)
+			if !found {
+				return fmt.Errorf("LST metadata found for denom %s but no corresponding tokenization record exists", meta.Base)
+			}
+			
+			// Set the metadata in the bank keeper
+			bankKeeper.SetDenomMetaData(ctx, meta)
+		}
+	}
+	
+	return nil
+}
+
+// ValidateLSTMetadata validates that all LST denoms have proper metadata
+// and that all metadata corresponds to existing tokenization records
+func ValidateLSTMetadata(ctx sdk.Context, k keeper.Keeper, bankKeeper types.BankKeeper) error {
+	// Get all tokenization records
+	records := k.GetAllTokenizationRecords(ctx)
+	
+	// Check each record has metadata
+	for _, record := range records {
+		if record.Denom != "" {
+			_, found := bankKeeper.GetDenomMetaData(ctx, record.Denom)
+			if !found {
+				return fmt.Errorf("tokenization record %d has denom %s but no metadata found", record.Id, record.Denom)
+			}
+		}
+	}
+	
+	// Check all LST metadata has corresponding records
+	var allMetadata []banktypes.Metadata
+	bankKeeper.IterateAllDenomMetaData(ctx, func(metadata banktypes.Metadata) bool {
+		if types.IsLiquidStakingTokenDenom(metadata.Base) {
+			allMetadata = append(allMetadata, metadata)
+		}
+		return false
+	})
+	
+	for _, meta := range allMetadata {
+		_, found := k.getTokenizationRecordByDenom(ctx, meta.Base)
+		if !found {
+			return fmt.Errorf("LST metadata exists for denom %s but no tokenization record found", meta.Base)
+		}
+	}
+	
+	return nil
+}
+
+// MigrateLSTMetadata provides a migration path for updating LST metadata format
+// This is a placeholder for future migrations if the metadata format changes
+func MigrateLSTMetadata(ctx sdk.Context, k keeper.Keeper, bankKeeper types.BankKeeper) error {
+	// Get all tokenization records
+	records := k.GetAllTokenizationRecords(ctx)
+	
+	for _, record := range records {
+		if record.Denom != "" {
+			// Check if metadata exists
+			existingMeta, found := bankKeeper.GetDenomMetaData(ctx, record.Denom)
+			if !found {
+				// Create missing metadata
+				metadata := types.GenerateLiquidStakingTokenMetadata(record.Validator, record.Id)
+				bankKeeper.SetDenomMetaData(ctx, metadata)
+			} else {
+				// Update metadata if format has changed
+				// This is where future migration logic would go
+				_ = existingMeta // placeholder to avoid unused variable
+			}
+		}
+	}
+	
+	return nil
+}

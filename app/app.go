@@ -232,6 +232,7 @@ var maccPerms = map[string][]string{
 	evmtypes.ModuleName:          {authtypes.Minter, authtypes.Burner},
 	feemarkettypes.ModuleName:    nil,
 	erc20types.ModuleName:        {authtypes.Minter, authtypes.Burner},
+	liquidstakingtypes.ModuleName: {authtypes.Minter, authtypes.Burner},
 }
 
 var (
@@ -720,7 +721,21 @@ func NewChainApp(
 	app.LiquidStakingKeeper = liquidstakingkeeper.NewKeeper(
 		runtime.NewKVStoreService(app.keys[liquidstakingtypes.StoreKey]),
 		appCodec,
+		app.StakingKeeper,
+		app.BankKeeper,
+		app.AccountKeeper,
+		// app.TransferKeeper, // TODO: Fix interface mismatch
+		// app.IBCKeeper.ChannelKeeper, // TODO: Fix interface mismatch
+		app.DistrKeeper,
+		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
 	)
+
+	// Register liquid staking governance handler
+	// Note: The liquid staking proposal handler needs to be registered with the governance module
+	// Since the keeper is created after the governance router is set, we need to handle this differently
+	// For now, parameter updates can use the standard param change proposal mechanism
+	// Custom proposals (EmergencyPause, UpdateValidatorCap) require adding the handler to the router
+	// TODO: Move liquid staking keeper creation before governance keeper to enable proposal handler registration
 
 	// IBC Fee Module keeper
 	app.IBCFeeKeeper = ibcfeekeeper.NewKeeper(
@@ -779,6 +794,9 @@ func NewChainApp(
 	// Create Transfer Stack
 	var transferStack porttypes.IBCModule
 	transferStack = transfer.NewIBCModule(app.TransferKeeper)
+	// Add liquid staking middleware for IBC transfers of liquid staking tokens
+	// TODO: Fix IBC integration
+	// transferStack = liquidstakingkeeper.NewIBCMiddleware(transferStack, app.LiquidStakingKeeper)
 	transferStack = ibcfee.NewIBCMiddleware(transferStack, app.IBCFeeKeeper)
 
 	// Create Interchain Accounts Stack

@@ -64,11 +64,64 @@ func (x *_GenesisState_2_list) IsValid() bool {
 	return x.list != nil
 }
 
+var _ protoreflect.List = (*_GenesisState_4_list)(nil)
+
+type _GenesisState_4_list struct {
+	list *[]*ExchangeRate
+}
+
+func (x *_GenesisState_4_list) Len() int {
+	if x.list == nil {
+		return 0
+	}
+	return len(*x.list)
+}
+
+func (x *_GenesisState_4_list) Get(i int) protoreflect.Value {
+	return protoreflect.ValueOfMessage((*x.list)[i].ProtoReflect())
+}
+
+func (x *_GenesisState_4_list) Set(i int, value protoreflect.Value) {
+	valueUnwrapped := value.Message()
+	concreteValue := valueUnwrapped.Interface().(*ExchangeRate)
+	(*x.list)[i] = concreteValue
+}
+
+func (x *_GenesisState_4_list) Append(value protoreflect.Value) {
+	valueUnwrapped := value.Message()
+	concreteValue := valueUnwrapped.Interface().(*ExchangeRate)
+	*x.list = append(*x.list, concreteValue)
+}
+
+func (x *_GenesisState_4_list) AppendMutable() protoreflect.Value {
+	v := new(ExchangeRate)
+	*x.list = append(*x.list, v)
+	return protoreflect.ValueOfMessage(v.ProtoReflect())
+}
+
+func (x *_GenesisState_4_list) Truncate(n int) {
+	for i := n; i < len(*x.list); i++ {
+		(*x.list)[i] = nil
+	}
+	*x.list = (*x.list)[:n]
+}
+
+func (x *_GenesisState_4_list) NewElement() protoreflect.Value {
+	v := new(ExchangeRate)
+	return protoreflect.ValueOfMessage(v.ProtoReflect())
+}
+
+func (x *_GenesisState_4_list) IsValid() bool {
+	return x.list != nil
+}
+
 var (
 	md_GenesisState                             protoreflect.MessageDescriptor
 	fd_GenesisState_params                      protoreflect.FieldDescriptor
 	fd_GenesisState_tokenization_records        protoreflect.FieldDescriptor
 	fd_GenesisState_last_tokenization_record_id protoreflect.FieldDescriptor
+	fd_GenesisState_exchange_rates              protoreflect.FieldDescriptor
+	fd_GenesisState_global_exchange_rate        protoreflect.FieldDescriptor
 )
 
 func init() {
@@ -77,6 +130,8 @@ func init() {
 	fd_GenesisState_params = md_GenesisState.Fields().ByName("params")
 	fd_GenesisState_tokenization_records = md_GenesisState.Fields().ByName("tokenization_records")
 	fd_GenesisState_last_tokenization_record_id = md_GenesisState.Fields().ByName("last_tokenization_record_id")
+	fd_GenesisState_exchange_rates = md_GenesisState.Fields().ByName("exchange_rates")
+	fd_GenesisState_global_exchange_rate = md_GenesisState.Fields().ByName("global_exchange_rate")
 }
 
 var _ protoreflect.Message = (*fastReflection_GenesisState)(nil)
@@ -162,6 +217,18 @@ func (x *fastReflection_GenesisState) Range(f func(protoreflect.FieldDescriptor,
 			return
 		}
 	}
+	if len(x.ExchangeRates) != 0 {
+		value := protoreflect.ValueOfList(&_GenesisState_4_list{list: &x.ExchangeRates})
+		if !f(fd_GenesisState_exchange_rates, value) {
+			return
+		}
+	}
+	if x.GlobalExchangeRate != nil {
+		value := protoreflect.ValueOfMessage(x.GlobalExchangeRate.ProtoReflect())
+		if !f(fd_GenesisState_global_exchange_rate, value) {
+			return
+		}
+	}
 }
 
 // Has reports whether a field is populated.
@@ -183,6 +250,10 @@ func (x *fastReflection_GenesisState) Has(fd protoreflect.FieldDescriptor) bool 
 		return len(x.TokenizationRecords) != 0
 	case "flora.liquidstaking.v1.GenesisState.last_tokenization_record_id":
 		return x.LastTokenizationRecordId != uint64(0)
+	case "flora.liquidstaking.v1.GenesisState.exchange_rates":
+		return len(x.ExchangeRates) != 0
+	case "flora.liquidstaking.v1.GenesisState.global_exchange_rate":
+		return x.GlobalExchangeRate != nil
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: flora.liquidstaking.v1.GenesisState"))
@@ -205,6 +276,10 @@ func (x *fastReflection_GenesisState) Clear(fd protoreflect.FieldDescriptor) {
 		x.TokenizationRecords = nil
 	case "flora.liquidstaking.v1.GenesisState.last_tokenization_record_id":
 		x.LastTokenizationRecordId = uint64(0)
+	case "flora.liquidstaking.v1.GenesisState.exchange_rates":
+		x.ExchangeRates = nil
+	case "flora.liquidstaking.v1.GenesisState.global_exchange_rate":
+		x.GlobalExchangeRate = nil
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: flora.liquidstaking.v1.GenesisState"))
@@ -233,6 +308,15 @@ func (x *fastReflection_GenesisState) Get(descriptor protoreflect.FieldDescripto
 	case "flora.liquidstaking.v1.GenesisState.last_tokenization_record_id":
 		value := x.LastTokenizationRecordId
 		return protoreflect.ValueOfUint64(value)
+	case "flora.liquidstaking.v1.GenesisState.exchange_rates":
+		if len(x.ExchangeRates) == 0 {
+			return protoreflect.ValueOfList(&_GenesisState_4_list{})
+		}
+		listValue := &_GenesisState_4_list{list: &x.ExchangeRates}
+		return protoreflect.ValueOfList(listValue)
+	case "flora.liquidstaking.v1.GenesisState.global_exchange_rate":
+		value := x.GlobalExchangeRate
+		return protoreflect.ValueOfMessage(value.ProtoReflect())
 	default:
 		if descriptor.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: flora.liquidstaking.v1.GenesisState"))
@@ -261,6 +345,12 @@ func (x *fastReflection_GenesisState) Set(fd protoreflect.FieldDescriptor, value
 		x.TokenizationRecords = *clv.list
 	case "flora.liquidstaking.v1.GenesisState.last_tokenization_record_id":
 		x.LastTokenizationRecordId = value.Uint()
+	case "flora.liquidstaking.v1.GenesisState.exchange_rates":
+		lv := value.List()
+		clv := lv.(*_GenesisState_4_list)
+		x.ExchangeRates = *clv.list
+	case "flora.liquidstaking.v1.GenesisState.global_exchange_rate":
+		x.GlobalExchangeRate = value.Message().Interface().(*GlobalExchangeRate)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: flora.liquidstaking.v1.GenesisState"))
@@ -292,6 +382,17 @@ func (x *fastReflection_GenesisState) Mutable(fd protoreflect.FieldDescriptor) p
 		}
 		value := &_GenesisState_2_list{list: &x.TokenizationRecords}
 		return protoreflect.ValueOfList(value)
+	case "flora.liquidstaking.v1.GenesisState.exchange_rates":
+		if x.ExchangeRates == nil {
+			x.ExchangeRates = []*ExchangeRate{}
+		}
+		value := &_GenesisState_4_list{list: &x.ExchangeRates}
+		return protoreflect.ValueOfList(value)
+	case "flora.liquidstaking.v1.GenesisState.global_exchange_rate":
+		if x.GlobalExchangeRate == nil {
+			x.GlobalExchangeRate = new(GlobalExchangeRate)
+		}
+		return protoreflect.ValueOfMessage(x.GlobalExchangeRate.ProtoReflect())
 	case "flora.liquidstaking.v1.GenesisState.last_tokenization_record_id":
 		panic(fmt.Errorf("field last_tokenization_record_id of message flora.liquidstaking.v1.GenesisState is not mutable"))
 	default:
@@ -315,6 +416,12 @@ func (x *fastReflection_GenesisState) NewField(fd protoreflect.FieldDescriptor) 
 		return protoreflect.ValueOfList(&_GenesisState_2_list{list: &list})
 	case "flora.liquidstaking.v1.GenesisState.last_tokenization_record_id":
 		return protoreflect.ValueOfUint64(uint64(0))
+	case "flora.liquidstaking.v1.GenesisState.exchange_rates":
+		list := []*ExchangeRate{}
+		return protoreflect.ValueOfList(&_GenesisState_4_list{list: &list})
+	case "flora.liquidstaking.v1.GenesisState.global_exchange_rate":
+		m := new(GlobalExchangeRate)
+		return protoreflect.ValueOfMessage(m.ProtoReflect())
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: flora.liquidstaking.v1.GenesisState"))
@@ -397,6 +504,16 @@ func (x *fastReflection_GenesisState) ProtoMethods() *protoiface.Methods {
 		if x.LastTokenizationRecordId != 0 {
 			n += 1 + runtime.Sov(uint64(x.LastTokenizationRecordId))
 		}
+		if len(x.ExchangeRates) > 0 {
+			for _, e := range x.ExchangeRates {
+				l = options.Size(e)
+				n += 1 + l + runtime.Sov(uint64(l))
+			}
+		}
+		if x.GlobalExchangeRate != nil {
+			l = options.Size(x.GlobalExchangeRate)
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
 		}
@@ -425,6 +542,36 @@ func (x *fastReflection_GenesisState) ProtoMethods() *protoiface.Methods {
 		if x.unknownFields != nil {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
+		}
+		if x.GlobalExchangeRate != nil {
+			encoded, err := options.Marshal(x.GlobalExchangeRate)
+			if err != nil {
+				return protoiface.MarshalOutput{
+					NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+					Buf:               input.Buf,
+				}, err
+			}
+			i -= len(encoded)
+			copy(dAtA[i:], encoded)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
+			i--
+			dAtA[i] = 0x2a
+		}
+		if len(x.ExchangeRates) > 0 {
+			for iNdEx := len(x.ExchangeRates) - 1; iNdEx >= 0; iNdEx-- {
+				encoded, err := options.Marshal(x.ExchangeRates[iNdEx])
+				if err != nil {
+					return protoiface.MarshalOutput{
+						NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+						Buf:               input.Buf,
+					}, err
+				}
+				i -= len(encoded)
+				copy(dAtA[i:], encoded)
+				i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
+				i--
+				dAtA[i] = 0x22
+			}
 		}
 		if x.LastTokenizationRecordId != 0 {
 			i = runtime.EncodeVarint(dAtA, i, uint64(x.LastTokenizationRecordId))
@@ -599,6 +746,76 @@ func (x *fastReflection_GenesisState) ProtoMethods() *protoiface.Methods {
 						break
 					}
 				}
+			case 4:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field ExchangeRates", wireType)
+				}
+				var msglen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					msglen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if msglen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + msglen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.ExchangeRates = append(x.ExchangeRates, &ExchangeRate{})
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.ExchangeRates[len(x.ExchangeRates)-1]); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				iNdEx = postIndex
+			case 5:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field GlobalExchangeRate", wireType)
+				}
+				var msglen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					msglen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if msglen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + msglen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if x.GlobalExchangeRate == nil {
+					x.GlobalExchangeRate = &GlobalExchangeRate{}
+				}
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.GlobalExchangeRate); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				iNdEx = postIndex
 			default:
 				iNdEx = preIndex
 				skippy, err := runtime.Skip(dAtA[iNdEx:])
@@ -659,6 +876,10 @@ type GenesisState struct {
 	TokenizationRecords []*TokenizationRecord `protobuf:"bytes,2,rep,name=tokenization_records,json=tokenizationRecords,proto3" json:"tokenization_records,omitempty"`
 	// last_tokenization_record_id is the last used record ID
 	LastTokenizationRecordId uint64 `protobuf:"varint,3,opt,name=last_tokenization_record_id,json=lastTokenizationRecordId,proto3" json:"last_tokenization_record_id,omitempty"`
+	// exchange_rates is the list of exchange rates for validators
+	ExchangeRates []*ExchangeRate `protobuf:"bytes,4,rep,name=exchange_rates,json=exchangeRates,proto3" json:"exchange_rates,omitempty"`
+	// global_exchange_rate is the global exchange rate statistics
+	GlobalExchangeRate *GlobalExchangeRate `protobuf:"bytes,5,opt,name=global_exchange_rate,json=globalExchangeRate,proto3" json:"global_exchange_rate,omitempty"`
 }
 
 func (x *GenesisState) Reset() {
@@ -702,6 +923,20 @@ func (x *GenesisState) GetLastTokenizationRecordId() uint64 {
 	return 0
 }
 
+func (x *GenesisState) GetExchangeRates() []*ExchangeRate {
+	if x != nil {
+		return x.ExchangeRates
+	}
+	return nil
+}
+
+func (x *GenesisState) GetGlobalExchangeRate() *GlobalExchangeRate {
+	if x != nil {
+		return x.GlobalExchangeRate
+	}
+	return nil
+}
+
 var File_flora_liquidstaking_v1_genesis_proto protoreflect.FileDescriptor
 
 var file_flora_liquidstaking_v1_genesis_proto_rawDesc = []byte{
@@ -712,7 +947,7 @@ var file_flora_liquidstaking_v1_genesis_proto_rawDesc = []byte{
 	0x67, 0x6f, 0x67, 0x6f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2f, 0x67, 0x6f, 0x67, 0x6f, 0x2e, 0x70,
 	0x72, 0x6f, 0x74, 0x6f, 0x1a, 0x22, 0x66, 0x6c, 0x6f, 0x72, 0x61, 0x2f, 0x6c, 0x69, 0x71, 0x75,
 	0x69, 0x64, 0x73, 0x74, 0x61, 0x6b, 0x69, 0x6e, 0x67, 0x2f, 0x76, 0x31, 0x2f, 0x74, 0x79, 0x70,
-	0x65, 0x73, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0xfc, 0x01, 0x0a, 0x0c, 0x47, 0x65, 0x6e,
+	0x65, 0x73, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0xad, 0x03, 0x0a, 0x0c, 0x47, 0x65, 0x6e,
 	0x65, 0x73, 0x69, 0x73, 0x53, 0x74, 0x61, 0x74, 0x65, 0x12, 0x42, 0x0a, 0x06, 0x70, 0x61, 0x72,
 	0x61, 0x6d, 0x73, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x24, 0x2e, 0x66, 0x6c, 0x6f, 0x72,
 	0x61, 0x2e, 0x6c, 0x69, 0x71, 0x75, 0x69, 0x64, 0x73, 0x74, 0x61, 0x6b, 0x69, 0x6e, 0x67, 0x2e,
@@ -728,22 +963,33 @@ var file_flora_liquidstaking_v1_genesis_proto_rawDesc = []byte{
 	0x69, 0x7a, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x72, 0x65, 0x63, 0x6f, 0x72, 0x64, 0x5f, 0x69,
 	0x64, 0x18, 0x03, 0x20, 0x01, 0x28, 0x04, 0x52, 0x18, 0x6c, 0x61, 0x73, 0x74, 0x54, 0x6f, 0x6b,
 	0x65, 0x6e, 0x69, 0x7a, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x52, 0x65, 0x63, 0x6f, 0x72, 0x64, 0x49,
-	0x64, 0x3a, 0x04, 0x88, 0xa0, 0x1f, 0x00, 0x42, 0xec, 0x01, 0x0a, 0x1a, 0x63, 0x6f, 0x6d, 0x2e,
-	0x66, 0x6c, 0x6f, 0x72, 0x61, 0x2e, 0x6c, 0x69, 0x71, 0x75, 0x69, 0x64, 0x73, 0x74, 0x61, 0x6b,
-	0x69, 0x6e, 0x67, 0x2e, 0x76, 0x31, 0x42, 0x0c, 0x47, 0x65, 0x6e, 0x65, 0x73, 0x69, 0x73, 0x50,
-	0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x46, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63,
-	0x6f, 0x6d, 0x2f, 0x72, 0x6f, 0x6c, 0x6c, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x73, 0x2f, 0x66, 0x6c,
-	0x6f, 0x72, 0x61, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x66, 0x6c, 0x6f, 0x72, 0x61, 0x2f, 0x6c, 0x69,
-	0x71, 0x75, 0x69, 0x64, 0x73, 0x74, 0x61, 0x6b, 0x69, 0x6e, 0x67, 0x2f, 0x76, 0x31, 0x3b, 0x6c,
-	0x69, 0x71, 0x75, 0x69, 0x64, 0x73, 0x74, 0x61, 0x6b, 0x69, 0x6e, 0x67, 0x76, 0x31, 0xa2, 0x02,
-	0x03, 0x46, 0x4c, 0x58, 0xaa, 0x02, 0x16, 0x46, 0x6c, 0x6f, 0x72, 0x61, 0x2e, 0x4c, 0x69, 0x71,
-	0x75, 0x69, 0x64, 0x73, 0x74, 0x61, 0x6b, 0x69, 0x6e, 0x67, 0x2e, 0x56, 0x31, 0xca, 0x02, 0x16,
-	0x46, 0x6c, 0x6f, 0x72, 0x61, 0x5c, 0x4c, 0x69, 0x71, 0x75, 0x69, 0x64, 0x73, 0x74, 0x61, 0x6b,
-	0x69, 0x6e, 0x67, 0x5c, 0x56, 0x31, 0xe2, 0x02, 0x22, 0x46, 0x6c, 0x6f, 0x72, 0x61, 0x5c, 0x4c,
-	0x69, 0x71, 0x75, 0x69, 0x64, 0x73, 0x74, 0x61, 0x6b, 0x69, 0x6e, 0x67, 0x5c, 0x56, 0x31, 0x5c,
-	0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x18, 0x46, 0x6c,
-	0x6f, 0x72, 0x61, 0x3a, 0x3a, 0x4c, 0x69, 0x71, 0x75, 0x69, 0x64, 0x73, 0x74, 0x61, 0x6b, 0x69,
-	0x6e, 0x67, 0x3a, 0x3a, 0x56, 0x31, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x64, 0x12, 0x51, 0x0a, 0x0e, 0x65, 0x78, 0x63, 0x68, 0x61, 0x6e, 0x67, 0x65, 0x5f, 0x72, 0x61,
+	0x74, 0x65, 0x73, 0x18, 0x04, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x24, 0x2e, 0x66, 0x6c, 0x6f, 0x72,
+	0x61, 0x2e, 0x6c, 0x69, 0x71, 0x75, 0x69, 0x64, 0x73, 0x74, 0x61, 0x6b, 0x69, 0x6e, 0x67, 0x2e,
+	0x76, 0x31, 0x2e, 0x45, 0x78, 0x63, 0x68, 0x61, 0x6e, 0x67, 0x65, 0x52, 0x61, 0x74, 0x65, 0x42,
+	0x04, 0xc8, 0xde, 0x1f, 0x00, 0x52, 0x0d, 0x65, 0x78, 0x63, 0x68, 0x61, 0x6e, 0x67, 0x65, 0x52,
+	0x61, 0x74, 0x65, 0x73, 0x12, 0x5c, 0x0a, 0x14, 0x67, 0x6c, 0x6f, 0x62, 0x61, 0x6c, 0x5f, 0x65,
+	0x78, 0x63, 0x68, 0x61, 0x6e, 0x67, 0x65, 0x5f, 0x72, 0x61, 0x74, 0x65, 0x18, 0x05, 0x20, 0x01,
+	0x28, 0x0b, 0x32, 0x2a, 0x2e, 0x66, 0x6c, 0x6f, 0x72, 0x61, 0x2e, 0x6c, 0x69, 0x71, 0x75, 0x69,
+	0x64, 0x73, 0x74, 0x61, 0x6b, 0x69, 0x6e, 0x67, 0x2e, 0x76, 0x31, 0x2e, 0x47, 0x6c, 0x6f, 0x62,
+	0x61, 0x6c, 0x45, 0x78, 0x63, 0x68, 0x61, 0x6e, 0x67, 0x65, 0x52, 0x61, 0x74, 0x65, 0x52, 0x12,
+	0x67, 0x6c, 0x6f, 0x62, 0x61, 0x6c, 0x45, 0x78, 0x63, 0x68, 0x61, 0x6e, 0x67, 0x65, 0x52, 0x61,
+	0x74, 0x65, 0x3a, 0x04, 0x88, 0xa0, 0x1f, 0x00, 0x42, 0xec, 0x01, 0x0a, 0x1a, 0x63, 0x6f, 0x6d,
+	0x2e, 0x66, 0x6c, 0x6f, 0x72, 0x61, 0x2e, 0x6c, 0x69, 0x71, 0x75, 0x69, 0x64, 0x73, 0x74, 0x61,
+	0x6b, 0x69, 0x6e, 0x67, 0x2e, 0x76, 0x31, 0x42, 0x0c, 0x47, 0x65, 0x6e, 0x65, 0x73, 0x69, 0x73,
+	0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x46, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e,
+	0x63, 0x6f, 0x6d, 0x2f, 0x72, 0x6f, 0x6c, 0x6c, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x73, 0x2f, 0x66,
+	0x6c, 0x6f, 0x72, 0x61, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x66, 0x6c, 0x6f, 0x72, 0x61, 0x2f, 0x6c,
+	0x69, 0x71, 0x75, 0x69, 0x64, 0x73, 0x74, 0x61, 0x6b, 0x69, 0x6e, 0x67, 0x2f, 0x76, 0x31, 0x3b,
+	0x6c, 0x69, 0x71, 0x75, 0x69, 0x64, 0x73, 0x74, 0x61, 0x6b, 0x69, 0x6e, 0x67, 0x76, 0x31, 0xa2,
+	0x02, 0x03, 0x46, 0x4c, 0x58, 0xaa, 0x02, 0x16, 0x46, 0x6c, 0x6f, 0x72, 0x61, 0x2e, 0x4c, 0x69,
+	0x71, 0x75, 0x69, 0x64, 0x73, 0x74, 0x61, 0x6b, 0x69, 0x6e, 0x67, 0x2e, 0x56, 0x31, 0xca, 0x02,
+	0x16, 0x46, 0x6c, 0x6f, 0x72, 0x61, 0x5c, 0x4c, 0x69, 0x71, 0x75, 0x69, 0x64, 0x73, 0x74, 0x61,
+	0x6b, 0x69, 0x6e, 0x67, 0x5c, 0x56, 0x31, 0xe2, 0x02, 0x22, 0x46, 0x6c, 0x6f, 0x72, 0x61, 0x5c,
+	0x4c, 0x69, 0x71, 0x75, 0x69, 0x64, 0x73, 0x74, 0x61, 0x6b, 0x69, 0x6e, 0x67, 0x5c, 0x56, 0x31,
+	0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x18, 0x46,
+	0x6c, 0x6f, 0x72, 0x61, 0x3a, 0x3a, 0x4c, 0x69, 0x71, 0x75, 0x69, 0x64, 0x73, 0x74, 0x61, 0x6b,
+	0x69, 0x6e, 0x67, 0x3a, 0x3a, 0x56, 0x31, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -763,15 +1009,19 @@ var file_flora_liquidstaking_v1_genesis_proto_goTypes = []interface{}{
 	(*GenesisState)(nil),       // 0: flora.liquidstaking.v1.GenesisState
 	(*ModuleParams)(nil),       // 1: flora.liquidstaking.v1.ModuleParams
 	(*TokenizationRecord)(nil), // 2: flora.liquidstaking.v1.TokenizationRecord
+	(*ExchangeRate)(nil),       // 3: flora.liquidstaking.v1.ExchangeRate
+	(*GlobalExchangeRate)(nil), // 4: flora.liquidstaking.v1.GlobalExchangeRate
 }
 var file_flora_liquidstaking_v1_genesis_proto_depIdxs = []int32{
 	1, // 0: flora.liquidstaking.v1.GenesisState.params:type_name -> flora.liquidstaking.v1.ModuleParams
 	2, // 1: flora.liquidstaking.v1.GenesisState.tokenization_records:type_name -> flora.liquidstaking.v1.TokenizationRecord
-	2, // [2:2] is the sub-list for method output_type
-	2, // [2:2] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	3, // 2: flora.liquidstaking.v1.GenesisState.exchange_rates:type_name -> flora.liquidstaking.v1.ExchangeRate
+	4, // 3: flora.liquidstaking.v1.GenesisState.global_exchange_rate:type_name -> flora.liquidstaking.v1.GlobalExchangeRate
+	4, // [4:4] is the sub-list for method output_type
+	4, // [4:4] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_flora_liquidstaking_v1_genesis_proto_init() }

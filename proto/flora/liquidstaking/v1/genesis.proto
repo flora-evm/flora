@@ -18,4 +18,10 @@ message GenesisState {
   
   // last_tokenization_record_id is the last used record ID
   uint64 last_tokenization_record_id = 3;
+  
+  // exchange_rates is the list of exchange rates for validators
+  repeated ExchangeRate exchange_rates = 4 [(gogoproto.nullable) = false];
+  
+  // global_exchange_rate is the global exchange rate statistics
+  GlobalExchangeRate global_exchange_rate = 5;
 }

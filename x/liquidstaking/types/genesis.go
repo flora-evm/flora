@@ -29,8 +29,9 @@ func (gs GenesisState) Validate() error {
 		return fmt.Errorf("invalid params: %w", err)
 	}
 
-	// Track seen IDs to check for duplicates
+	// Track seen IDs and denoms to check for duplicates
 	seenIDs := make(map[uint64]bool)
+	seenDenoms := make(map[string]bool)
 	maxID := uint64(0)
 
 	// Validate each tokenization record
@@ -45,6 +46,26 @@ func (gs GenesisState) Validate() error {
 		}
 		seenIDs[record.Id] = true
 
+		// Check for duplicate denoms
+		if record.Denom != "" {
+			if seenDenoms[record.Denom] {
+				return fmt.Errorf("duplicate denom %s at record ID %d", record.Denom, record.Id)
+			}
+			seenDenoms[record.Denom] = true
+
+			// Validate denom format
+			if !IsLiquidStakingTokenDenom(record.Denom) {
+				return fmt.Errorf("invalid liquid staking token denom format: %s", record.Denom)
+			}
+
+			// Extract validator and record ID from denom and verify consistency
+			expectedDenom := GenerateLiquidStakingTokenDenom(record.Validator, record.Id)
+			if record.Denom != expectedDenom {
+				return fmt.Errorf("denom %s does not match expected format for validator %s and record ID %d", 
+					record.Denom, record.Validator, record.Id)
+			}
+		}
+
 		// Track max ID
 		if record.Id > maxID {
 			maxID = record.Id
@@ -55,6 +76,15 @@ func (gs GenesisState) Validate() error {
 	if maxID > gs.LastTokenizationRecordId {
 		return fmt.Errorf("last tokenization record ID (%d) is less than maximum record ID (%d)", 
 			gs.LastTokenizationRecordId, maxID)
+	}
+
+	// Validate record IDs are sequential (no gaps allowed in genesis)
+	if len(gs.TokenizationRecords) > 0 {
+		for i := uint64(1); i <= maxID; i++ {
+			if !seenIDs[i] {
+				return fmt.Errorf("missing tokenization record ID %d (IDs must be sequential in genesis)", i)
+			}
+		}
 	}
 
 	return nil

@@ -33,6 +33,18 @@ var (
 	// Aggregates for state tracking
 	TotalLiquidStakedKey           = []byte{0x07} // key for total liquid staked amount
 	ValidatorLiquidStakedPrefix    = []byte{0x08} // prefix for validator liquid staked amounts
+	
+	// Rate limiting keys
+	GlobalTokenizationActivityKey     = []byte{0x09} // key for global tokenization activity
+	ValidatorTokenizationActivityPrefix = []byte{0x0A} // prefix for validator tokenization activity
+	UserTokenizationActivityPrefix     = []byte{0x0B} // prefix for user tokenization activity
+	
+	// Exchange rate keys
+	ExchangeRatePrefix            = []byte{0x0C} // prefix for exchange rates by validator
+	GlobalExchangeRateKey         = []byte{0x0D} // key for global exchange rate statistics
+	
+	// Auto-compound keys
+	LastAutoCompoundHeightKey     = []byte{0x0E} // key for last auto-compound block height
 )
 
 // GetTokenizationRecordKey returns the key for a tokenization record
@@ -80,4 +92,19 @@ func Uint64ToBytes(n uint64) []byte {
 // BytesToUint64 converts bytes to uint64
 func BytesToUint64(b []byte) uint64 {
 	return binary.BigEndian.Uint64(b)
+}
+
+// GetValidatorTokenizationActivityKey returns the key for validator tokenization activity
+func GetValidatorTokenizationActivityKey(validator string) []byte {
+	return append(ValidatorTokenizationActivityPrefix, []byte(validator)...)
+}
+
+// GetUserTokenizationActivityKey returns the key for user tokenization activity
+func GetUserTokenizationActivityKey(user string) []byte {
+	return append(UserTokenizationActivityPrefix, []byte(user)...)
+}
+
+// GetExchangeRateKey returns the key for a validator's exchange rate
+func GetExchangeRateKey(validatorAddr string) []byte {
+	return append(ExchangeRatePrefix, []byte(validatorAddr)...)
 }
